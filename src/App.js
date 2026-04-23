@@ -193,7 +193,9 @@ async function fireLocalNotification(title, body, id) {
 
 function cleanLocationText(camera) {
   const text =
-    camera.description?.trim() || camera.name?.trim() || "the road ahead";
+    camera.description?.trim() ||
+    camera.name?.trim() ||
+    "the road ahead";
 
   return text
     .replace(/\s+/g, " ")
@@ -243,9 +245,7 @@ function openExternal(url) {
 function buildSuggestionMailto(name, email, suggestion) {
   const subject = encodeURIComponent("NoTicket DC App Suggestion");
   const body = encodeURIComponent(
-    `Name: ${name || ""}\nEmail: ${email || ""}\n\nSuggestion:\n${
-      suggestion || ""
-    }`
+    `Name: ${name || ""}\nEmail: ${email || ""}\n\nSuggestion:\n${suggestion || ""}`
   );
   return `mailto:${APP_EMAIL}?subject=${subject}&body=${body}`;
 }
@@ -302,6 +302,35 @@ function RecenterMap({ center, zoom }) {
   return null;
 }
 
+function TrafficActionButton({ icon, label, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        background: "#dc2626",
+        color: "white",
+        border: "1px solid #ef4444",
+        padding: "14px 18px",
+        borderRadius: 14,
+        fontSize: 16,
+        fontWeight: "bold",
+        cursor: "pointer",
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        width: "100%",
+        justifyContent: "flex-start",
+        boxShadow: "0 8px 18px rgba(220,38,38,0.25)",
+      }}
+    >
+      <span style={{ fontSize: 24, minWidth: 28, textAlign: "center" }}>
+        {icon}
+      </span>
+      <span>{label}</span>
+    </button>
+  );
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState("drive");
   const [prefsLoaded, setPrefsLoaded] = useState(false);
@@ -327,6 +356,7 @@ export default function App() {
   const [showNearestCameras, setShowNearestCameras] = useState(false);
   const [permissionReady, setPermissionReady] = useState(false);
   const [insideDc, setInsideDc] = useState(true);
+  const [showLocationHelp, setShowLocationHelp] = useState(false);
   const [ideaName, setIdeaName] = useState("");
   const [ideaEmail, setIdeaEmail] = useState("");
   const [ideaSuggestion, setIdeaSuggestion] = useState("");
@@ -563,9 +593,7 @@ export default function App() {
     });
 
     if (candidates.length === 0) {
-      setStatus(
-        "Traffic camera alerts are active. No immediate alerts right now."
-      );
+      setStatus("Traffic camera alerts are active. No immediate alerts right now.");
       return;
     }
 
@@ -607,10 +635,8 @@ export default function App() {
   async function startCameraAlerts() {
     try {
       setLocationError("");
-      setStarted(true);
-      setStatus("Requesting location access for traffic camera alerts...");
-      spokenCameraIdsRef.current = {};
-      insideRadiusIdsRef.current = {};
+      setShowLocationHelp(false);
+      setStatus("We use your location to warn you about traffic cameras in real time.");
 
       if (isNativeApp()) {
         const locationGranted = await requestLocationPermission();
@@ -618,12 +644,17 @@ export default function App() {
 
         if (!locationGranted) {
           setLocationError(
-            "Location permission denied. Please allow location access."
+            "Location access is required for No Ticket DC alerts. Please enable location in your phone settings, then tap Start Traffic Camera Alerts again."
           );
           setStatus("Location permission denied.");
+          setShowLocationHelp(true);
           setStarted(false);
           return;
         }
+
+        setStarted(true);
+        spokenCameraIdsRef.current = {};
+        insideRadiusIdsRef.current = {};
 
         if (nativeWatchCallbackIdRef.current) {
           await Geolocation.clearWatch({
@@ -641,6 +672,7 @@ export default function App() {
             if (err) {
               setLocationError(err.message || "Unable to get your location.");
               setStatus("Unable to get your location.");
+              setShowLocationHelp(true);
               return;
             }
 
@@ -648,9 +680,8 @@ export default function App() {
               setPosition(pos);
               setPermissionReady(true);
               setLocationError("");
-              setStatus(
-                "Traffic camera alerts are active. Tracking location live."
-              );
+              setShowLocationHelp(false);
+              setStatus("Traffic camera alerts are active. Tracking location live.");
             }
           }
         );
@@ -659,12 +690,15 @@ export default function App() {
       }
 
       if (!navigator.geolocation) {
-        setLocationError(
-          "Geolocation is not supported on this device/browser."
-        );
+        setLocationError("Geolocation is not supported on this device/browser.");
         setStarted(false);
+        setShowLocationHelp(true);
         return;
       }
+
+      setStarted(true);
+      spokenCameraIdsRef.current = {};
+      insideRadiusIdsRef.current = {};
 
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
@@ -675,16 +709,15 @@ export default function App() {
           setPosition(pos);
           setPermissionReady(true);
           setLocationError("");
-          setStatus(
-            "Traffic camera alerts are active. Tracking location live."
-          );
+          setShowLocationHelp(false);
+          setStatus("Traffic camera alerts are active. Tracking location live.");
         },
         (error) => {
           let message = "Unable to get your location.";
 
           if (error.code === 1) {
             message =
-              "Location permission denied. Please allow location access.";
+              "Location access is required for No Ticket DC alerts. Please enable location in your browser settings, then tap Start Traffic Camera Alerts again.";
           } else if (error.code === 2) {
             message =
               "Location unavailable. Try going outside or checking your GPS.";
@@ -696,6 +729,7 @@ export default function App() {
           setLocationError(message);
           setStatus(message);
           setStarted(false);
+          setShowLocationHelp(true);
         },
         {
           enableHighAccuracy: true,
@@ -708,6 +742,7 @@ export default function App() {
       setLocationError("Could not start traffic camera alerts.");
       setStatus("Could not start traffic camera alerts.");
       setStarted(false);
+      setShowLocationHelp(true);
     }
   }
 
@@ -783,7 +818,7 @@ export default function App() {
           <div>
             <h1 style={{ fontSize: 48, marginBottom: 8 }}>No Ticket DC</h1>
             <p style={{ color: "#cfcfcf", fontSize: 20, marginTop: 0 }}>
-              Traffic Camera Enforcement Awarness App for Washington DC
+              Traffic Camera Enforcement Awareness App for Washington DC
             </p>
           </div>
         </div>
@@ -819,54 +854,48 @@ export default function App() {
           <>
             <SectionCard title="Camera Alerts" accent="#2d2d2d">
               <p style={{ color: "#dedede", lineHeight: 1.6 }}>
-                No Ticket DC alerts Drivers of Speed Cameras, Stops Sign
-                Cameras, Red Light Cameras, Bus Lane Enforcement and More in
-                Washington DC.
+                No Ticket DC alerts drivers of speed cameras, stop sign cameras,
+                red light cameras, bus lane enforcement and more in Washington DC.
               </p>
+
+              {showLocationHelp ? (
+                <div
+                  style={{
+                    marginTop: 14,
+                    background: "#3b1d00",
+                    color: "#ffd08a",
+                    padding: 14,
+                    borderRadius: 14,
+                    lineHeight: 1.6,
+                    border: "1px solid #7c2d12",
+                  }}
+                >
+                  <strong>Location access needed.</strong> Turn on location so
+                  No Ticket DC can warn you about nearby cameras while you drive.
+                  Then tap the red start button again.
+                </div>
+              ) : null}
 
               <div
                 style={{
-                  display: "flex",
+                  display: "grid",
                   gap: 12,
-                  flexWrap: "wrap",
-                  marginTop: 14,
+                  marginTop: 16,
                 }}
               >
-                {!started ? (
-                  <button
-                    onClick={startCameraAlerts}
-                    style={{
-                      background: "#dc2626",
-                      color: "white",
-                      border: "none",
-                      padding: "14px 22px",
-                      borderRadius: 12,
-                      fontSize: 16,
-                      fontWeight: "bold",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Start Traffic Camera Alerts
-                  </button>
-                ) : (
-                  <button
-                    onClick={stopCameraAlerts}
-                    style={{
-                      background: "#444",
-                      color: "white",
-                      border: "none",
-                      padding: "14px 22px",
-                      borderRadius: 12,
-                      fontSize: 16,
-                      fontWeight: "bold",
-                      cursor: "pointer",
-                    }}
-                  >
-                    Stop Traffic Camera Alerts
-                  </button>
-                )}
+                <TrafficActionButton
+                  icon="🚦"
+                  label={
+                    started
+                      ? "Stop Traffic Camera Alerts"
+                      : "Start Traffic Camera Alerts"
+                  }
+                  onClick={started ? stopCameraAlerts : startCameraAlerts}
+                />
 
-                <button
+                <TrafficActionButton
+                  icon="🛑"
+                  label="Test Traffic Camera Alerts"
                   onClick={() => {
                     const sampleCamera = {
                       type: "red_light",
@@ -882,73 +911,37 @@ export default function App() {
                       Number(String(Date.now()).slice(-8))
                     );
                   }}
-                  style={{
-                    background: "#1f1f1f",
-                    color: "white",
-                    border: "1px solid #555",
-                    padding: "14px 22px",
-                    borderRadius: 12,
-                    fontSize: 16,
-                    fontWeight: "bold",
-                    cursor: "pointer",
-                  }}
-                >
-                  Test Traffic Camera Alerts
-                </button>
+                />
 
-                <button
+                <TrafficActionButton
+                  icon="⛔"
+                  label={
+                    showAlertHistory
+                      ? "Hide Traffic Recent Alerts"
+                      : "Show Traffic Recent Alerts"
+                  }
                   onClick={() => setShowAlertHistory((prev) => !prev)}
-                  style={{
-                    background: "#1f1f1f",
-                    color: "white",
-                    border: "1px solid #555",
-                    padding: "14px 22px",
-                    borderRadius: 12,
-                    fontSize: 16,
-                    fontWeight: "bold",
-                    cursor: "pointer",
-                  }}
-                >
-                  {showAlertHistory
-                    ? "Hide Recent Alerts"
-                    : "Show Traffic Recent Alerts"}
-                </button>
+                />
 
-                <button
+                <TrafficActionButton
+                  icon="↔️"
+                  label={
+                    showCurrentStatus
+                      ? "Hide Current Traffic Status"
+                      : "Show Current Traffic Status"
+                  }
                   onClick={() => setShowCurrentStatus((prev) => !prev)}
-                  style={{
-                    background: "#1f1f1f",
-                    color: "white",
-                    border: "1px solid #555",
-                    padding: "14px 22px",
-                    borderRadius: 12,
-                    fontSize: 16,
-                    fontWeight: "bold",
-                    cursor: "pointer",
-                  }}
-                >
-                  {showCurrentStatus
-                    ? "Hide Current Traffic Status"
-                    : "Show Current Traffic Status"}
-                </button>
+                />
 
-                <button
+                <TrafficActionButton
+                  icon="➡️"
+                  label={
+                    showNearestCameras
+                      ? "Hide Nearest Traffic Cameras"
+                      : "Show Nearest Traffic Cameras"
+                  }
                   onClick={() => setShowNearestCameras((prev) => !prev)}
-                  style={{
-                    background: "#1f1f1f",
-                    color: "white",
-                    border: "1px solid #555",
-                    padding: "14px 22px",
-                    borderRadius: 12,
-                    fontSize: 16,
-                    fontWeight: "bold",
-                    cursor: "pointer",
-                  }}
-                >
-                  {showNearestCameras
-                    ? "Hide Nearest Cameras"
-                    : "Show Nearest Traffic Cameras"}
-                </button>
+                />
               </div>
 
               <div
@@ -975,10 +968,7 @@ export default function App() {
 
                   {position?.coords && (
                     <CircleMarker
-                      center={[
-                        position.coords.latitude,
-                        position.coords.longitude,
-                      ]}
+                      center={[position.coords.latitude, position.coords.longitude]}
                       radius={10}
                       pathOptions={{
                         color: "#22c55e",
@@ -1003,9 +993,7 @@ export default function App() {
                     >
                       <Popup>
                         <div style={{ minWidth: "220px" }}>
-                          <div
-                            style={{ fontWeight: "bold", marginBottom: "6px" }}
-                          >
+                          <div style={{ fontWeight: "bold", marginBottom: "6px" }}>
                             {camera.typeLabel || "Camera"}
                           </div>
                           <div>{camera.name}</div>
@@ -1021,9 +1009,7 @@ export default function App() {
                             </div>
                           ) : null}
                           <div style={{ marginTop: "4px" }}>
-                            {camera.ahead
-                              ? "Ahead of driver"
-                              : "Other direction"}
+                            {camera.ahead ? "Ahead of driver" : "Other direction"}
                           </div>
                         </div>
                       </Popup>
@@ -1068,8 +1054,7 @@ export default function App() {
                   <strong>Latest alert:</strong> {lastAlert}
                 </p>
                 <p>
-                  <strong>Supported DC cameras loaded:</strong>{" "}
-                  {cameraData.length}
+                  <strong>Supported DC cameras loaded:</strong> {cameraData.length}
                 </p>
                 <p>
                   <strong>Heading:</strong> {userHeading}
@@ -1080,6 +1065,10 @@ export default function App() {
                 </p>
                 <p>
                   <strong>Alert distance:</strong> 500 feet
+                </p>
+                <p>
+                  <strong>Permissions ready:</strong>{" "}
+                  {permissionReady ? "Yes" : "Not yet"}
                 </p>
                 <p>
                   <strong>Nearest camera:</strong>{" "}
@@ -1167,7 +1156,9 @@ export default function App() {
                         Speed limit: {camera.speedLimit} mph
                       </div>
                     ) : null}
-                    <div style={{ marginTop: 4, color: "#888", fontSize: 14 }}>
+                    <div
+                      style={{ marginTop: 4, color: "#888", fontSize: 14 }}
+                    >
                       Status: {camera.activeStatus || "--"} /{" "}
                       {camera.cameraStatus || "--"}
                     </div>
@@ -1219,9 +1210,9 @@ export default function App() {
                 lineHeight: 1.7,
               }}
             >
-              <strong>Disclaimer:</strong> No Ticket DC is a driver awareness
-              tool. Alerts are provided for informational purposes only. No
-              Ticket DC does not guarantee avoidance of traffic violations.
+              <strong>Disclaimer:</strong> NoTicket DC is a driver awareness
+              tool. Alerts are provided for informational purposes only.
+              NoTicket DC does not guarantee avoidance of traffic violations.
               Always follow all traffic laws and posted signs.
             </div>
 
@@ -1310,14 +1301,14 @@ export default function App() {
             </div>
 
             <p style={{ color: "#cfcfcf", marginTop: 18, lineHeight: 1.6 }}>
-              No Ticket Dc will Use Your Location to Provide Nearby Traffic
-              Camera Alerts While Using the App in Washington DC.
+              Location is used to provide nearby traffic camera alerts while
+              using the app in Washington, DC.
             </p>
           </SectionCard>
         ) : null}
 
         {activeTab === "ideas" ? (
-          <SectionCard title="Help Us Make No Ticket DC Better">
+          <SectionCard title="Help Us Make NoTicket DC Better">
             <p style={{ color: "#d5d5d5", lineHeight: 1.7 }}>
               Have an idea for improving the app? Send us your suggestion.
             </p>
