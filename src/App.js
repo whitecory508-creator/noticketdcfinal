@@ -191,44 +191,20 @@ async function fireLocalNotification(title, body, id) {
   }
 }
 
-function cleanLocationText(camera) {
-  const text =
-    camera.description?.trim() ||
-    camera.name?.trim() ||
-    "the road ahead";
-
-  return text
-    .replace(/\s+/g, " ")
-    .replace(/\bNW\b/g, "northwest")
-    .replace(/\bNE\b/g, "northeast")
-    .replace(/\bSW\b/g, "southwest")
-    .replace(/\bSE\b/g, "southeast")
-    .replace(/\bN\/B\b/g, "northbound")
-    .replace(/\bS\/B\b/g, "southbound")
-    .replace(/\bE\/B\b/g, "eastbound")
-    .replace(/\bW\/B\b/g, "westbound");
-}
-
 function getCameraAlertText(camera) {
-  const locationText = cleanLocationText(camera);
-
   if (camera.type === "speed") {
-    return `Speed camera ahead in 500 feet. ${locationText}.`;
+    return "Approaching a speed camera in 500 feet. Follow posted speed limit.";
   }
 
   if (camera.type === "red_light") {
-    return `Red light camera ahead in 500 feet. ${locationText}.`;
+    return "Approaching a red light camera in 500 feet.";
   }
 
   if (camera.type === "stop_sign") {
-    return `Stop sign camera ahead in 500 feet. ${locationText}.`;
+    return "Approaching stop sign camera in 500 feet.";
   }
 
-  if (camera.type === "bus_lane" || camera.type === "truck") {
-    return `Traffic enforcement camera ahead in 500 feet. ${locationText}.`;
-  }
-
-  return `Traffic camera ahead in 500 feet. ${locationText}.`;
+  return "Approaching a traffic enforcement camera in 500 feet.";
 }
 
 function getCameraColor(camera) {
@@ -302,14 +278,14 @@ function RecenterMap({ center, zoom }) {
   return null;
 }
 
-function TrafficActionButton({ icon, label, onClick }) {
+function TrafficActionButton({ icon, label, onClick, active = false }) {
   return (
     <button
       onClick={onClick}
       style={{
-        background: "#dc2626",
+        background: active ? "#16a34a" : "#dc2626",
         color: "white",
-        border: "1px solid #ef4444",
+        border: active ? "1px solid #22c55e" : "1px solid #ef4444",
         padding: "14px 18px",
         borderRadius: 14,
         fontSize: 16,
@@ -320,7 +296,9 @@ function TrafficActionButton({ icon, label, onClick }) {
         gap: 12,
         width: "100%",
         justifyContent: "flex-start",
-        boxShadow: "0 8px 18px rgba(220,38,38,0.25)",
+        boxShadow: active
+          ? "0 8px 18px rgba(34,197,94,0.25)"
+          : "0 8px 18px rgba(220,38,38,0.25)",
       }}
     >
       <span style={{ fontSize: 24, minWidth: 28, textAlign: "center" }}>
@@ -808,23 +786,36 @@ export default function App() {
       <div style={{ maxWidth: 980, margin: "0 auto" }}>
         <div
           style={{
+            textAlign: "center",
             display: "flex",
-            justifyContent: "space-between",
+            justifyContent: "center",
             alignItems: "center",
-            gap: 12,
-            flexWrap: "wrap",
+            flexDirection: "column",
+            gap: 8,
           }}
         >
-          <div>
-            <h1 style={{ fontSize: 48, marginBottom: 8 }}>No Ticket DC</h1>
-            <p style={{ color: "#cfcfcf", fontSize: 20, marginTop: 0 }}>
-              Traffic Camera Enforcement Awareness App for Washington DC
-            </p>
-          </div>
+          <h1 style={{ fontSize: 48, marginBottom: 8 }}>No Ticket DC</h1>
+          <p
+            style={{
+              color: "#cfcfcf",
+              fontSize: 20,
+              marginTop: 0,
+              maxWidth: 720,
+              lineHeight: 1.4,
+            }}
+          >
+            Traffic Camera Enforcement Awareness App for Washington DC
+          </p>
         </div>
 
         <div
-          style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}
+          style={{
+            display: "flex",
+            gap: 10,
+            flexWrap: "wrap",
+            marginTop: 18,
+            justifyContent: "center",
+          }}
         >
           {[
             ["drive", "Drive"],
@@ -890,12 +881,14 @@ export default function App() {
                       ? "Stop Traffic Camera Alerts"
                       : "Start Traffic Camera Alerts"
                   }
+                  active={started}
                   onClick={started ? stopCameraAlerts : startCameraAlerts}
                 />
 
                 <TrafficActionButton
                   icon="🛑"
                   label="Test Traffic Camera Alerts"
+                  active={false}
                   onClick={() => {
                     const sampleCamera = {
                       type: "red_light",
@@ -920,6 +913,7 @@ export default function App() {
                       ? "Hide Traffic Recent Alerts"
                       : "Show Traffic Recent Alerts"
                   }
+                  active={showAlertHistory}
                   onClick={() => setShowAlertHistory((prev) => !prev)}
                 />
 
@@ -930,6 +924,7 @@ export default function App() {
                       ? "Hide Current Traffic Status"
                       : "Show Current Traffic Status"
                   }
+                  active={showCurrentStatus}
                   onClick={() => setShowCurrentStatus((prev) => !prev)}
                 />
 
@@ -940,6 +935,7 @@ export default function App() {
                       ? "Hide Nearest Traffic Cameras"
                       : "Show Nearest Traffic Cameras"
                   }
+                  active={showNearestCameras}
                   onClick={() => setShowNearestCameras((prev) => !prev)}
                 />
               </div>
@@ -1082,21 +1078,6 @@ export default function App() {
                   <strong>Cameras ahead:</strong> {camerasAhead}
                 </p>
 
-                {!insideDc ? (
-                  <div
-                    style={{
-                      background: "#3b1d00",
-                      color: "#ffd08a",
-                      padding: 12,
-                      borderRadius: 12,
-                      marginTop: 12,
-                    }}
-                  >
-                    NoTicket DC currently provides active alert coverage only
-                    inside Washington, DC.
-                  </div>
-                ) : null}
-
                 {locationError ? (
                   <div
                     style={{
@@ -1224,86 +1205,12 @@ export default function App() {
                 marginTop: 18,
               }}
             >
-              <button
-                onClick={() => openExternal(APP_URLS.privacy)}
-                style={{
-                  background: "#1f1f1f",
-                  color: "white",
-                  border: "1px solid #555",
-                  padding: "14px 18px",
-                  borderRadius: 12,
-                  cursor: "pointer",
-                  fontWeight: "bold",
-                }}
-              >
-                Privacy Policy
-              </button>
-
-              <button
-                onClick={() => openExternal(APP_URLS.terms)}
-                style={{
-                  background: "#1f1f1f",
-                  color: "white",
-                  border: "1px solid #555",
-                  padding: "14px 18px",
-                  borderRadius: 12,
-                  cursor: "pointer",
-                  fontWeight: "bold",
-                }}
-              >
-                Terms of Service
-              </button>
-
-              <button
-                onClick={() => openExternal(APP_URLS.disclaimer)}
-                style={{
-                  background: "#1f1f1f",
-                  color: "white",
-                  border: "1px solid #555",
-                  padding: "14px 18px",
-                  borderRadius: 12,
-                  cursor: "pointer",
-                  fontWeight: "bold",
-                }}
-              >
-                Disclaimer
-              </button>
-
-              <button
-                onClick={() => openExternal(APP_URLS.refund)}
-                style={{
-                  background: "#1f1f1f",
-                  color: "white",
-                  border: "1px solid #555",
-                  padding: "14px 18px",
-                  borderRadius: 12,
-                  cursor: "pointer",
-                  fontWeight: "bold",
-                }}
-              >
-                Refund Policy
-              </button>
-
-              <button
-                onClick={() => openExternal(APP_URLS.contact)}
-                style={{
-                  background: "#1f1f1f",
-                  color: "white",
-                  border: "1px solid #555",
-                  padding: "14px 18px",
-                  borderRadius: 12,
-                  cursor: "pointer",
-                  fontWeight: "bold",
-                }}
-              >
-                Contact Support
-              </button>
+              <button onClick={() => openExternal(APP_URLS.privacy)}>Privacy Policy</button>
+              <button onClick={() => openExternal(APP_URLS.terms)}>Terms of Service</button>
+              <button onClick={() => openExternal(APP_URLS.disclaimer)}>Disclaimer</button>
+              <button onClick={() => openExternal(APP_URLS.refund)}>Refund Policy</button>
+              <button onClick={() => openExternal(APP_URLS.contact)}>Contact Support</button>
             </div>
-
-            <p style={{ color: "#cfcfcf", marginTop: 18, lineHeight: 1.6 }}>
-              Location is used to provide nearby traffic camera alerts while
-              using the app in Washington, DC.
-            </p>
           </SectionCard>
         ) : null}
 
@@ -1314,111 +1221,74 @@ export default function App() {
             </p>
 
             <form onSubmit={submitIdeaSuggestion}>
-              <div style={{ marginTop: 14 }}>
-                <label style={{ display: "block", marginBottom: 8 }}>
-                  Your name
-                </label>
-                <input
-                  type="text"
-                  value={ideaName}
-                  onChange={(e) => setIdeaName(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    borderRadius: 12,
-                    border: "1px solid #444",
-                    background: "#101010",
-                    color: "white",
-                    boxSizing: "border-box",
-                  }}
-                />
-              </div>
-
-              <div style={{ marginTop: 14 }}>
-                <label style={{ display: "block", marginBottom: 8 }}>
-                  Your email
-                </label>
-                <input
-                  type="email"
-                  value={ideaEmail}
-                  onChange={(e) => setIdeaEmail(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    borderRadius: 12,
-                    border: "1px solid #444",
-                    background: "#101010",
-                    color: "white",
-                    boxSizing: "border-box",
-                  }}
-                />
-              </div>
-
-              <div style={{ marginTop: 14 }}>
-                <label style={{ display: "block", marginBottom: 8 }}>
-                  Your suggestion
-                </label>
-                <textarea
-                  value={ideaSuggestion}
-                  onChange={(e) => setIdeaSuggestion(e.target.value)}
-                  rows={6}
-                  required
-                  style={{
-                    width: "100%",
-                    padding: "12px",
-                    borderRadius: 12,
-                    border: "1px solid #444",
-                    background: "#101010",
-                    color: "white",
-                    boxSizing: "border-box",
-                    resize: "vertical",
-                  }}
-                />
-              </div>
-
-              <div
+              <input
+                type="text"
+                placeholder="Your name"
+                value={ideaName}
+                onChange={(e) => setIdeaName(e.target.value)}
                 style={{
-                  display: "flex",
-                  gap: 12,
-                  flexWrap: "wrap",
-                  marginTop: 18,
+                  width: "100%",
+                  padding: "12px",
+                  borderRadius: 12,
+                  border: "1px solid #444",
+                  background: "#101010",
+                  color: "white",
+                  boxSizing: "border-box",
+                  marginTop: 12,
+                }}
+              />
+
+              <input
+                type="email"
+                placeholder="Your email"
+                value={ideaEmail}
+                onChange={(e) => setIdeaEmail(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  borderRadius: 12,
+                  border: "1px solid #444",
+                  background: "#101010",
+                  color: "white",
+                  boxSizing: "border-box",
+                  marginTop: 12,
+                }}
+              />
+
+              <textarea
+                placeholder="Your suggestion"
+                value={ideaSuggestion}
+                onChange={(e) => setIdeaSuggestion(e.target.value)}
+                rows={6}
+                required
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  borderRadius: 12,
+                  border: "1px solid #444",
+                  background: "#101010",
+                  color: "white",
+                  boxSizing: "border-box",
+                  marginTop: 12,
+                  resize: "vertical",
+                }}
+              />
+
+              <button
+                type="submit"
+                style={{
+                  background: "#dc2626",
+                  color: "white",
+                  border: "none",
+                  padding: "14px 22px",
+                  borderRadius: 12,
+                  cursor: "pointer",
+                  fontWeight: "bold",
+                  marginTop: 14,
                 }}
               >
-                <button
-                  type="submit"
-                  style={{
-                    background: "#dc2626",
-                    color: "white",
-                    border: "none",
-                    padding: "14px 22px",
-                    borderRadius: 12,
-                    cursor: "pointer",
-                    fontWeight: "bold",
-                  }}
-                >
-                  Submit Suggestion
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIdeaName("");
-                    setIdeaEmail("");
-                    setIdeaSuggestion("");
-                  }}
-                  style={{
-                    background: "#1f1f1f",
-                    color: "white",
-                    border: "1px solid #555",
-                    padding: "14px 22px",
-                    borderRadius: 12,
-                    cursor: "pointer",
-                    fontWeight: "bold",
-                  }}
-                >
-                  Clear Form
-                </button>
-              </div>
+                Submit Suggestion
+              </button>
             </form>
           </SectionCard>
         ) : null}
