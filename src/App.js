@@ -3,7 +3,6 @@ import { Capacitor } from "@capacitor/core";
 import { Geolocation } from "@capacitor/geolocation";
 import { LocalNotifications } from "@capacitor/local-notifications";
 import { Preferences } from "@capacitor/preferences";
-import { TextToSpeech } from "@capacitor-community/text-to-speech";
 import "leaflet/dist/leaflet.css";
 import {
   MapContainer,
@@ -35,19 +34,10 @@ const PREF_KEYS = {
   showAlertHistory: "noticket_show_alert_history",
   showCurrentStatus: "noticket_show_current_status",
   showNearestCameras: "noticket_show_nearest_cameras",
-  showGasInfo: "noticket_show_gas_info",
 };
 
 const ALERT_DISTANCE_FEET = 500;
 const ALERT_DISTANCE_METERS = ALERT_DISTANCE_FEET / 3.28084;
-
-const DC_AVERAGE_GAS_PRICES = {
-  regular: 4.426,
-  mid: 4.969,
-  premium: 5.377,
-  diesel: 5.869,
-  source: "AAA District of Columbia average gas prices",
-};
 
 const DC_BOUNDS = {
   minLat: 38.7916,
@@ -174,49 +164,14 @@ async function requestNotificationPermission() {
   return permission.display === "granted";
 }
 
-async function stopSpeaking() {
-  try {
-    if (Capacitor.isNativePlatform()) {
-      await TextToSpeech.stop();
-      return;
-    }
-
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
-  } catch (error) {
-    console.error("Stop speech error:", error);
-  }
-}
-
-async function speakText(text) {
-  if (!text) return;
-
-  try {
-    if (Capacitor.isNativePlatform()) {
-      await TextToSpeech.stop();
-      await TextToSpeech.speak({
-        text,
-        lang: "en-US",
-        rate: 1.0,
-        pitch: 1.0,
-        volume: 1.0,
-        queueStrategy: 1,
-      });
-      return;
-    }
-
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1;
-      utterance.volume = 1;
-      utterance.pitch = 1;
-      window.speechSynthesis.speak(utterance);
-    }
-  } catch (error) {
-    console.error("Text-to-speech error:", error);
-  }
+function speakText(text) {
+  if (typeof window === "undefined" || !window.speechSynthesis || !text) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.rate = 1;
+  utterance.volume = 1;
+  utterance.pitch = 1;
+  window.speechSynthesis.speak(utterance);
 }
 
 async function fireLocalNotification(title, body, id) {
@@ -380,11 +335,6 @@ export default function App() {
   const [permissionReady, setPermissionReady] = useState(false);
   const [insideDc, setInsideDc] = useState(true);
   const [showLocationHelp, setShowLocationHelp] = useState(false);
-  const [showGasInfo, setShowGasInfo] = useState(false);
-  const [gasStations, setGasStations] = useState([]);
-  const [gasLoading, setGasLoading] = useState(false);
-  const [gasError, setGasError] = useState("");
-  const [gasSort, setGasSort] = useState("closest");
   const [ideaName, setIdeaName] = useState("");
   const [ideaEmail, setIdeaEmail] = useState("");
   const [ideaSuggestion, setIdeaSuggestion] = useState("");
@@ -408,7 +358,6 @@ export default function App() {
         setShowNearestCameras(
           toBool(prefs[PREF_KEYS.showNearestCameras], false)
         );
-        setShowGasInfo(toBool(prefs[PREF_KEYS.showGasInfo], false));
       } finally {
         setPrefsLoaded(true);
       }
@@ -431,7 +380,6 @@ export default function App() {
     savePref(PREF_KEYS.showAlertHistory, showAlertHistory);
     savePref(PREF_KEYS.showCurrentStatus, showCurrentStatus);
     savePref(PREF_KEYS.showNearestCameras, showNearestCameras);
-    savePref(PREF_KEYS.showGasInfo, showGasInfo);
   }, [
     showSpeed,
     showRedLight,
@@ -440,7 +388,6 @@ export default function App() {
     showAlertHistory,
     showCurrentStatus,
     showNearestCameras,
-    showGasInfo,
     prefsLoaded,
   ]);
 
@@ -528,7 +475,9 @@ export default function App() {
         );
       }
 
-      stopSpeaking();
+      if (typeof window !== "undefined" && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
     };
   }, []);
 
@@ -582,21 +531,6 @@ export default function App() {
         return a.distanceMeters - b.distanceMeters;
       });
   }, [position, cameraData, showSpeed, showRedLight, showStopSign, showOther]);
-
-  const sortedGasStations = useMemo(() => {
-    const stations = [...gasStations];
-
-    if (gasSort === "cheapest") {
-      return stations.sort((a, b) => {
-        const aPrice = a.regularPrice || DC_AVERAGE_GAS_PRICES.regular;
-        const bPrice = b.regularPrice || DC_AVERAGE_GAS_PRICES.regular;
-        if (aPrice !== bPrice) return aPrice - bPrice;
-        return a.distanceMeters - b.distanceMeters;
-      });
-    }
-
-    return stations.sort((a, b) => a.distanceMeters - b.distanceMeters);
-  }, [gasStations, gasSort]);
 
   useEffect(() => {
     if (!started || !position || cameras.length === 0) return;
@@ -675,99 +609,6 @@ export default function App() {
       insideRadiusIdsRef.current[selected.id] = true;
     }
   }, [started, position, cameras, voiceEnabled]);
-
-  async function loadNearbyGasStations(forceShow = true) {
-    try {
-      if (forceShow) setShowGasInfo(true);
-
-      setGasLoading(true);
-      setGasError("");
-
-      const lat = position?.coords?.latitude || 38.9072;
-      const lng = position?.coords?.longitude || -77.0369;
-
-      const query = `
-        [out:json][timeout:25];
-        (
-          node["amenity"="fuel"](around:8000,${lat},${lng});
-          way["amenity"="fuel"](around:8000,${lat},${lng});
-          relation["amenity"="fuel"](around:8000,${lat},${lng});
-        );
-        out center tags;
-      `;
-
-      const response = await fetch("https://overpass-api.de/api/interpreter", {
-        method: "POST",
-        headers: {
-          "Content-Type": "text/plain",
-        },
-        body: query,
-      });
-
-      if (!response.ok) {
-        throw new Error("Gas station request failed.");
-      }
-
-      const data = await response.json();
-
-      const stations = (data.elements || [])
-        .map((item) => {
-          const stationLat = item.lat || item.center?.lat;
-          const stationLng = item.lon || item.center?.lon;
-
-          if (!Number.isFinite(stationLat) || !Number.isFinite(stationLng)) {
-            return null;
-          }
-
-          const tags = item.tags || {};
-          const name =
-            tags.name ||
-            tags.brand ||
-            tags.operator ||
-            "Nearby Gas Station";
-
-          return {
-            id: `${item.type}-${item.id}`,
-            name,
-            brand: tags.brand || tags.operator || "",
-            address:
-              tags["addr:street"] && tags["addr:housenumber"]
-                ? `${tags["addr:housenumber"]} ${tags["addr:street"]}`
-                : tags["addr:street"] || "",
-            lat: stationLat,
-            lng: stationLng,
-            distanceMeters: distanceInMeters(lat, lng, stationLat, stationLng),
-            regularPrice: null,
-            midPrice: null,
-            premiumPrice: null,
-            dieselPrice: null,
-          };
-        })
-        .filter(Boolean)
-        .sort((a, b) => a.distanceMeters - b.distanceMeters)
-        .slice(0, 15);
-
-      setGasStations(stations);
-
-      if (stations.length === 0) {
-        setGasError("No nearby gas stations found right now.");
-      }
-    } catch (error) {
-      console.error(error);
-      setGasError("Could not load nearby gas stations right now.");
-    } finally {
-      setGasLoading(false);
-    }
-  }
-
-  function toggleGasInfo() {
-    if (showGasInfo) {
-      setShowGasInfo(false);
-      return;
-    }
-
-    loadNearbyGasStations(true);
-  }
 
   async function startCameraAlerts() {
     try {
@@ -900,7 +741,9 @@ export default function App() {
       nativeWatchCallbackIdRef.current = null;
     }
 
-    await stopSpeaking();
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
 
     setStarted(false);
     setStatus("Traffic camera alerts stopped.");
@@ -1049,6 +892,8 @@ export default function App() {
                   onClick={() => {
                     const sampleCamera = {
                       type: "red_light",
+                      description: "M St W/B @ Wisconsin Ave NW",
+                      name: "ATE 0813",
                     };
                     const text = getCameraAlertText(sampleCamera);
                     setLastAlert(text);
@@ -1059,17 +904,6 @@ export default function App() {
                       Number(String(Date.now()).slice(-8))
                     );
                   }}
-                />
-
-                <TrafficActionButton
-                  icon="⛽"
-                  label={
-                    showGasInfo
-                      ? "Hide Cheapest Gas Near Me"
-                      : "Show Cheapest Gas Near Me"
-                  }
-                  active={showGasInfo}
-                  onClick={toggleGasInfo}
                 />
 
                 <TrafficActionButton
@@ -1177,184 +1011,9 @@ export default function App() {
                       </Popup>
                     </CircleMarker>
                   ))}
-
-                  {showGasInfo &&
-                    gasStations.map((station) => (
-                      <CircleMarker
-                        key={station.id}
-                        center={[station.lat, station.lng]}
-                        radius={6}
-                        pathOptions={{
-                          color: "#22c55e",
-                          fillColor: "#22c55e",
-                          fillOpacity: 0.85,
-                        }}
-                      >
-                        <Popup>
-                          <div style={{ minWidth: "220px" }}>
-                            <div style={{ fontWeight: "bold" }}>
-                              {station.name}
-                            </div>
-                            {station.address ? <div>{station.address}</div> : null}
-                            <div style={{ marginTop: 8 }}>
-                              Distance: {formatDistance(station.distanceMeters)}
-                            </div>
-                            <div style={{ marginTop: 8 }}>
-                              Regular avg: ${DC_AVERAGE_GAS_PRICES.regular.toFixed(3)}
-                            </div>
-                            <div>Mid avg: ${DC_AVERAGE_GAS_PRICES.mid.toFixed(3)}</div>
-                            <div>Premium avg: ${DC_AVERAGE_GAS_PRICES.premium.toFixed(3)}</div>
-                            <div>Diesel avg: ${DC_AVERAGE_GAS_PRICES.diesel.toFixed(3)}</div>
-                          </div>
-                        </Popup>
-                      </CircleMarker>
-                    ))}
                 </MapContainer>
               </div>
             </SectionCard>
-
-            {showGasInfo ? (
-              <SectionCard title="Cheapest Gas Near Me" accent="#14532d">
-                <p style={{ color: "#d5d5d5", lineHeight: 1.7 }}>
-                  Nearby gas stations are pulled from OpenStreetMap. Live
-                  station-by-station prices require a fuel-price data provider.
-                </p>
-
-                <div
-                  style={{
-                    background: "#101010",
-                    border: "1px solid #333",
-                    borderRadius: 12,
-                    padding: 14,
-                    marginTop: 10,
-                  }}
-                >
-                  <strong>Current DC average gas prices:</strong>
-                  <div style={{ marginTop: 8 }}>
-                    Regular: ${DC_AVERAGE_GAS_PRICES.regular.toFixed(3)}
-                  </div>
-                  <div>Mid-Grade: ${DC_AVERAGE_GAS_PRICES.mid.toFixed(3)}</div>
-                  <div>Premium: ${DC_AVERAGE_GAS_PRICES.premium.toFixed(3)}</div>
-                  <div>Diesel: ${DC_AVERAGE_GAS_PRICES.diesel.toFixed(3)}</div>
-                </div>
-
-                <div
-                  style={{
-                    display: "flex",
-                    gap: 10,
-                    flexWrap: "wrap",
-                    marginTop: 14,
-                  }}
-                >
-                  <button
-                    onClick={() => setGasSort("closest")}
-                    style={{
-                      background: gasSort === "closest" ? "#16a34a" : "#1f1f1f",
-                      color: "white",
-                      border: "1px solid #555",
-                      padding: "10px 14px",
-                      borderRadius: 10,
-                      cursor: "pointer",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    Sort Closest
-                  </button>
-
-                  <button
-                    onClick={() => setGasSort("cheapest")}
-                    style={{
-                      background: gasSort === "cheapest" ? "#16a34a" : "#1f1f1f",
-                      color: "white",
-                      border: "1px solid #555",
-                      padding: "10px 14px",
-                      borderRadius: 10,
-                      cursor: "pointer",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    Sort Cheapest
-                  </button>
-
-                  <button
-                    onClick={() => loadNearbyGasStations(true)}
-                    style={{
-                      background: "#dc2626",
-                      color: "white",
-                      border: "1px solid #ef4444",
-                      padding: "10px 14px",
-                      borderRadius: 10,
-                      cursor: "pointer",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    Refresh Gas Stations
-                  </button>
-                </div>
-
-                {gasLoading ? <p>Loading nearby gas stations...</p> : null}
-
-                {gasError ? (
-                  <div
-                    style={{
-                      background: "#3b1212",
-                      color: "#ffb5b5",
-                      padding: 12,
-                      borderRadius: 12,
-                      marginTop: 12,
-                    }}
-                  >
-                    {gasError}
-                  </div>
-                ) : null}
-
-                {sortedGasStations.map((station) => (
-                  <div
-                    key={station.id}
-                    style={{
-                      background: "#101010",
-                      border: "1px solid #333",
-                      borderRadius: 12,
-                      padding: 14,
-                      marginTop: 10,
-                    }}
-                  >
-                    <div style={{ fontWeight: "bold", fontSize: 18 }}>
-                      {station.name}
-                    </div>
-                    {station.brand ? (
-                      <div style={{ color: "#bbb", marginTop: 4 }}>
-                        {station.brand}
-                      </div>
-                    ) : null}
-                    {station.address ? (
-                      <div style={{ color: "#bbb", marginTop: 4 }}>
-                        {station.address}
-                      </div>
-                    ) : null}
-                    <div style={{ marginTop: 8 }}>
-                      Distance: {formatDistance(station.distanceMeters)}
-                    </div>
-                    <div style={{ marginTop: 8 }}>
-                      Regular: station live price coming soon / DC avg $
-                      {DC_AVERAGE_GAS_PRICES.regular.toFixed(3)}
-                    </div>
-                    <div>
-                      Mid: station live price coming soon / DC avg $
-                      {DC_AVERAGE_GAS_PRICES.mid.toFixed(3)}
-                    </div>
-                    <div>
-                      Premium: station live price coming soon / DC avg $
-                      {DC_AVERAGE_GAS_PRICES.premium.toFixed(3)}
-                    </div>
-                    <div>
-                      Diesel: station live price coming soon / DC avg $
-                      {DC_AVERAGE_GAS_PRICES.diesel.toFixed(3)}
-                    </div>
-                  </div>
-                ))}
-              </SectionCard>
-            ) : null}
 
             {showAlertHistory ? (
               <SectionCard title="Recent Alerts">
@@ -1546,21 +1205,11 @@ export default function App() {
                 marginTop: 18,
               }}
             >
-              <button onClick={() => openExternal(APP_URLS.privacy)}>
-                Privacy Policy
-              </button>
-              <button onClick={() => openExternal(APP_URLS.terms)}>
-                Terms of Service
-              </button>
-              <button onClick={() => openExternal(APP_URLS.disclaimer)}>
-                Disclaimer
-              </button>
-              <button onClick={() => openExternal(APP_URLS.refund)}>
-                Refund Policy
-              </button>
-              <button onClick={() => openExternal(APP_URLS.contact)}>
-                Contact Support
-              </button>
+              <button onClick={() => openExternal(APP_URLS.privacy)}>Privacy Policy</button>
+              <button onClick={() => openExternal(APP_URLS.terms)}>Terms of Service</button>
+              <button onClick={() => openExternal(APP_URLS.disclaimer)}>Disclaimer</button>
+              <button onClick={() => openExternal(APP_URLS.refund)}>Refund Policy</button>
+              <button onClick={() => openExternal(APP_URLS.contact)}>Contact Support</button>
             </div>
           </SectionCard>
         ) : null}
@@ -1647,3 +1296,4 @@ export default function App() {
     </div>
   );
 }
+
