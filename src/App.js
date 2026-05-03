@@ -163,56 +163,43 @@ async function requestNotificationPermission() {
   return permission.display === "granted";
 }
 
-async function stopSpeaking() {
-  try {
-    if (typeof window !== "undefined" && window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
-  } catch (error) {
-    console.error("Stop speech error:", error);
+function stopSpeaking() {
+  if (typeof window !== "undefined" && window.speechSynthesis) {
+    window.speechSynthesis.cancel();
   }
 }
 
 function unlockSpeech() {
-  try {
-    if (typeof window === "undefined" || !window.speechSynthesis) return;
+  if (typeof window === "undefined" || !window.speechSynthesis) return;
 
-    const unlock = new SpeechSynthesisUtterance("Voice alerts enabled");
-    unlock.lang = "en-US";
-    unlock.rate = 1;
-    unlock.pitch = 1;
-    unlock.volume = 0;
+  const text = "Voice alerts are ready.";
 
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(unlock);
-  } catch (error) {
-    console.error("Unlock speech error:", error);
-  }
+  const utterance = new SpeechSynthesisUtterance(text);
+
+  utterance.lang = "en-US";
+  utterance.rate = 1;
+  utterance.volume = 1;
+  utterance.pitch = 1;
+
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(utterance);
 }
 
-async function speakText(text) {
-  if (!text) return;
-
-  try {
-    if (typeof window === "undefined" || !window.speechSynthesis) {
-      console.error("Speech synthesis not available.");
-      return;
-    }
-
-    window.speechSynthesis.cancel();
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = "en-US";
-    utterance.rate = 0.95;
-    utterance.volume = 1;
-    utterance.pitch = 1;
-
-    setTimeout(() => {
-      window.speechSynthesis.speak(utterance);
-    }, 150);
-  } catch (error) {
-    console.error("Speech error:", error);
+function speakText(text) {
+  if (typeof window === "undefined" || !window.speechSynthesis || !text) {
+    return;
   }
+
+  window.speechSynthesis.cancel();
+
+  const utterance = new SpeechSynthesisUtterance(text);
+
+  utterance.lang = "en-US";
+  utterance.rate = 1;
+  utterance.volume = 1;
+  utterance.pitch = 1;
+
+  window.speechSynthesis.speak(utterance);
 }
 
 async function fireLocalNotification(title, body, id) {
@@ -259,7 +246,9 @@ function openExternal(url) {
 function buildSuggestionMailto(name, email, suggestion) {
   const subject = encodeURIComponent("NoTicket DC App Suggestion");
   const body = encodeURIComponent(
-    `Name: ${name || ""}\nEmail: ${email || ""}\n\nSuggestion:\n${suggestion || ""}`
+    `Name: ${name || ""}\nEmail: ${email || ""}\n\nSuggestion:\n${
+      suggestion || ""
+    }`
   );
   return `mailto:${APP_EMAIL}?subject=${subject}&body=${body}`;
 }
@@ -382,7 +371,9 @@ function normalizeCollectApiGasData(data, userLat, userLng) {
   return list
     .map((item, index) => {
       const lat = Number(item.lat || item.latitude || item.stationLat);
-      const lng = Number(item.lng || item.lon || item.longitude || item.stationLng);
+      const lng = Number(
+        item.lng || item.lon || item.longitude || item.stationLng
+      );
 
       return {
         id: item.id || item.stationId || `gas-${index}`,
@@ -398,7 +389,9 @@ function normalizeCollectApiGasData(data, userLat, userLng) {
           item.stationAddress ||
           item.city ||
           "Washington, DC",
-        regular: normalizePrice(item.regular || item.regularPrice || item.gasoline),
+        regular: normalizePrice(
+          item.regular || item.regularPrice || item.gasoline
+        ),
         midGrade: normalizePrice(item.midGrade || item.mid || item.midPrice),
         premium: normalizePrice(item.premium || item.premiumPrice),
         diesel: normalizePrice(item.diesel || item.dieselPrice),
@@ -464,7 +457,9 @@ export default function App() {
         setShowOther(toBool(prefs[PREF_KEYS.showOther], true));
         setShowAlertHistory(toBool(prefs[PREF_KEYS.showAlertHistory], false));
         setShowCurrentStatus(toBool(prefs[PREF_KEYS.showCurrentStatus], false));
-        setShowNearestCameras(toBool(prefs[PREF_KEYS.showNearestCameras], false));
+        setShowNearestCameras(
+          toBool(prefs[PREF_KEYS.showNearestCameras], false)
+        );
         setShowGasPrices(toBool(prefs[PREF_KEYS.showGasPrices], false));
       } finally {
         setPrefsLoaded(true);
@@ -692,7 +687,9 @@ export default function App() {
     });
 
     if (candidates.length === 0) {
-      setStatus("Traffic camera alerts are active. No immediate alerts right now.");
+      setStatus(
+        "Traffic camera alerts are active. No immediate alerts right now."
+      );
       return;
     }
 
@@ -733,7 +730,9 @@ export default function App() {
     try {
       setLocationError("");
       setShowLocationHelp(false);
-      setStatus("We use your location to warn you about traffic cameras in real time.");
+      setStatus(
+        "We use your location to warn you about traffic cameras in real time."
+      );
 
       unlockSpeech();
 
@@ -780,7 +779,9 @@ export default function App() {
               setPermissionReady(true);
               setLocationError("");
               setShowLocationHelp(false);
-              setStatus("Traffic camera alerts are active. Tracking location live.");
+              setStatus(
+                "Traffic camera alerts are active. Tracking location live."
+              );
             }
           }
         );
@@ -789,7 +790,9 @@ export default function App() {
       }
 
       if (!navigator.geolocation) {
-        setLocationError("Geolocation is not supported on this device/browser.");
+        setLocationError(
+          "Geolocation is not supported on this device/browser."
+        );
         setStarted(false);
         setShowLocationHelp(true);
         return;
@@ -809,7 +812,9 @@ export default function App() {
           setPermissionReady(true);
           setLocationError("");
           setShowLocationHelp(false);
-          setStatus("Traffic camera alerts are active. Tracking location live.");
+          setStatus(
+            "Traffic camera alerts are active. Tracking location live."
+          );
         },
         (error) => {
           let message = "Unable to get your location.";
@@ -1008,7 +1013,8 @@ export default function App() {
             <SectionCard title="Camera Alerts" accent="#2d2d2d">
               <p style={{ color: "#dedede", lineHeight: 1.6 }}>
                 No Ticket DC alerts drivers of speed cameras, stop sign cameras,
-                red light cameras, bus lane enforcement and more in Washington DC.
+                red light cameras, bus lane enforcement and more in Washington
+                DC.
               </p>
 
               {showLocationHelp ? (
@@ -1024,8 +1030,8 @@ export default function App() {
                   }}
                 >
                   <strong>Location access needed.</strong> Turn on location so
-                  No Ticket DC can warn you about nearby cameras while you drive.
-                  Then tap the red start button again.
+                  No Ticket DC can warn you about nearby cameras while you
+                  drive. Then tap the red start button again.
                 </div>
               ) : null}
 
@@ -1180,7 +1186,9 @@ export default function App() {
                             </div>
                           ) : null}
                           <div style={{ marginTop: "4px" }}>
-                            {camera.ahead ? "Ahead of driver" : "Other direction"}
+                            {camera.ahead
+                              ? "Ahead of driver"
+                              : "Other direction"}
                           </div>
                         </div>
                       </Popup>
@@ -1216,7 +1224,8 @@ export default function App() {
                               <div>Premium: {money(station.premium)}</div>
                               <div>Diesel: {money(station.diesel)}</div>
                               <div style={{ marginTop: 8 }}>
-                                Distance: {formatDistance(station.distanceMeters)}
+                                Distance:{" "}
+                                {formatDistance(station.distanceMeters)}
                               </div>
                             </div>
                           </Popup>
@@ -1237,7 +1246,8 @@ export default function App() {
                   <button
                     onClick={() => setGasSort("cheapest")}
                     style={{
-                      background: gasSort === "cheapest" ? "#16a34a" : "#1f1f1f",
+                      background:
+                        gasSort === "cheapest" ? "#16a34a" : "#1f1f1f",
                       color: "white",
                       border: "1px solid #555",
                       padding: "10px 14px",
@@ -1353,7 +1363,8 @@ export default function App() {
                   <strong>Latest alert:</strong> {lastAlert}
                 </p>
                 <p>
-                  <strong>Supported DC cameras loaded:</strong> {cameraData.length}
+                  <strong>Supported DC cameras loaded:</strong>{" "}
+                  {cameraData.length}
                 </p>
                 <p>
                   <strong>Heading:</strong> {userHeading}
@@ -1607,3 +1618,4 @@ export default function App() {
     </div>
   );
 }
+
