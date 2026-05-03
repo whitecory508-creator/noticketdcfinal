@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "21503310384",
+    "project_id": "yappzy-ff16a",
+    "storage_bucket": "yappzy-ff16a.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:21503310384:android:62c95ab15ef51961eb8bf5",
+        "android_client_info": {
+          "package_name": "com.noticketdc.online"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDw_PiSoW-38kKZY9wMpH09yb__w-OLhhk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

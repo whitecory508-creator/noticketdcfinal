@@ -1,0 +1,34 @@
+<resources>
+    <string name="app_name" translatable="false">NoTicket DC</string>
+    <string name="first_launch_title">Welcome!</string>
+    <string name="default_notification_channel_id" translatable="false">Notification</string>
+    <string name="first_launch_message">Thank you for downloading the app!</string>
+    <string name="later">Maybe later</string>
+    <string name="no">No</string>
+    <string name="yes">Yes</string>
+    <string name="rate_title">Do you like our app?</string>
+    <string name="rate_message">If so, please take a moment to rate this app.</string>
+    <string name="rate">Rate now</string>
+    <string name="facebook_title">Connect with us</string>
+    <string name="facebook_message">Become friends on Facebook?</string>
+    <string name="offline_message_1">Network down?</string>
+    <string name="offline_message_2">Please Check your Network.</string>
+    <string name="try_again">Try again</string>
+    <string name="no_connection_title">Connection error</string>
+    <string name="no_connection_message">Please check your internet connection</string>
+    <string name="title_activity_show_web_view">App</string>
+    <string name="exit_app_dialog">"Do you want to exit this app?"</string>
+    <string name="deeplinking" translatable="false"></string>
+    <string name="local_notification_channel_name">Local channel</string>
+    <string name="local_notification_channel_description">Used to display local notifications</string>
+    <string name="local_notification_channel_id">Local notification</string>
+    <string name="msg_subscribed">Subscribed to Firebase push channel topic</string>
+    <string name="msg_subscribe_failed">Failed to subscribe to Firebase push channel topic</string>
+    <string name="download_noapp">No application can handle this request. Did you install a compatible app?</string>
+    <string name="username">Username</string>
+    <string name="password">Password</string>
+    <string name="submit">OK</string>
+    <string name="auth_dialogtitle">Login</string>
+    <string name="user_name_required">A username is required</string>
+    <string name="password_name_required">A password is required</string>
+</resources>

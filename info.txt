@@ -1,0 +1,8 @@
+I have an issue with my app.. I can't hear the voice alerts on Android.. I can hear it on webapp and iOS app but not on Android. Can you fix this
+
+I will update the code on GitHub with my username invited: developer-vic or with mail: oluwasegunababatunde @gmail.com
+
+I will also send APK file client can install on his android phone.
+keystore file is: NoTicket DC.jks
+keystore file password: nokia5800
+
