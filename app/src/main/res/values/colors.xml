@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">#000000</color>
+    <color name="colorPrimaryDark">#000000</color> <!-- Used for Color of the Status Bar-->
+    <color name="colorAccent">#000000</color> <!-- Used for Color of the Loading Sign and Dialogue Buttons -->
+    <color name="launchLoadingSignBackground">#FFFFFF</color> <!-- Background Color for Loading Sign Screen on launch -->
+    <color name="colorWhite">#000000</color> <!-- Background Color for Splash Screen -->
+    <color name="colorTransparent">#00FFFFFF</color>
+</resources>

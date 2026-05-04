@@ -1,0 +1,25 @@
+I have an issue with my app.. I can't hear the voice alerts on Android.. I can hear it on webapp and iOS app but not on Android. Can you fix this
+
+I will update the code on GitHub with my username invited: developer-vic or with mail: oluwasegunababatunde @gmail.com
+
+I will also send APK file client can install on his android phone.
+keystore file is: NoTicket DC.jks
+keystore file password: nokia5800
+
+Check if Text-to-speech (TTS) is on
+1. Open Settings on the phone.
+2. Search the settings search bar for “Text-to-speech” or “TTS”.
+3. Open Text-to-speech output (sometimes under Accessibility or Language & input).
+4. Tap Play / Listen to an example (if you see it).
+- If you hear a sample, TTS is working.
+- If it’s silent or says engine not installed, continue below.
+
+Turn it on / fix it
+1. In Text-to-speech output, set Preferred engine to Google Text-to-speech Engine (or your phone’s default engine).
+2. Tap the gear next to the engine (or open Google Text-to-speech / Speech Services by Google in the Play Store) and install updates and voice data if offered.
+3. Turn volume up: use Media volume while testing (not only ring).
+4. Open your No Ticket DC app again and tap Test Traffic Camera Alerts.
+
+If you can’t find the menu:
+In Settings, use search for: “Text-to-speech output” or “Speech Services” or “Google Text-to-speech” and follow the same idea: pick engine → install voices → test sample.
+
