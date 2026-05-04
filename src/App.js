@@ -15,9 +15,14 @@ import {
 const DC_CAMERA_API =
   "https://maps2.dcgis.dc.gov/dcgis/rest/services/DCGIS_DATA/Public_Safety_WebMercator/MapServer/47/query?f=json&where=1%3D1&outFields=ENFORCEMENT_SPACE_CODE,LOCATION_DESCRIPTION,SITE_CODE,ACTIVE_STATUS,CAMERA_STATUS,DEVICE_MOBILITY,ENFORCEMENT_TYPE,SPEED_LIMIT,CAMERA_LATITUDE,CAMERA_LONGITUDE,WARD,ANC,SMD,OBJECTID";
 
-const COLLECTAPI_KEY = "2QAPaQSvFFelRNhiilukIk:6gpQoKyznZdwWFmksTiNuO";
-const COLLECTAPI_GAS_STATE_URL =
-  "https://api.collectapi.com/gasPrice/stateUsaPrice?state=DC";
+const ZYLA_FUEL_API_KEY = "13700|ZWRKO46cXaIKsyYbikiXF1hvTlfYl91A7AykXNnp";
+const ZYLA_FUEL_PRICE_URL =
+  "https://zylalabs.com/api/5925/fuel+rate+insights+api/7820/price";
+const ZYLA_STATION_DATA_URL =
+  "https://zylalabs.com/api/5925/fuel+rate+insights+api/23316/station+data";
+
+const DEFAULT_GAS_ZIP = "20001";
+const GAS_TYPES = ["regular", "midgrade", "premium", "diesel"];
 
 const APP_EMAIL = "info@noticketdc.com";
 
@@ -39,6 +44,7 @@ const PREF_KEYS = {
   showCurrentStatus: "noticket_show_current_status",
   showNearestCameras: "noticket_show_nearest_cameras",
   showGasPrices: "noticket_show_gas_prices",
+  gasZip: "noticket_gas_zip",
 };
 
 const ALERT_DISTANCE_FEET = 500;
@@ -266,7 +272,7 @@ function buildSuggestionMailto(name, email, suggestion) {
   return `mailto:${APP_EMAIL}?subject=${subject}&body=${body}`;
 }
 
-function SectionCard({ title, children, accent = "#333" }) {
+function SectionCard({ title, children, accent = "#333", centered = false }) {
   return (
     <div
       style={{
@@ -276,6 +282,7 @@ function SectionCard({ title, children, accent = "#333" }) {
         padding: 20,
         marginTop: 20,
         boxShadow: "0 10px 24px rgba(0,0,0,0.22)",
+        textAlign: centered ? "center" : "left",
       }}
     >
       <h2 style={{ marginTop: 0, marginBottom: 14, fontSize: 22 }}>{title}</h2>
@@ -333,7 +340,7 @@ function TrafficActionButton({ icon, label, onClick, active = false }) {
         alignItems: "center",
         gap: 12,
         width: "100%",
-        justifyContent: "flex-start",
+        justifyContent: "center",
         boxShadow: active
           ? "0 8px 18px rgba(34,197,94,0.25)"
           : "0 8px 18px rgba(220,38,38,0.25)",
@@ -368,6 +375,190 @@ function normalizePrice(value) {
   const cleaned = String(value).replace(/[^0-9.]/g, "");
   const num = Number(cleaned);
   return Number.isFinite(num) ? num : null;
+}
+
+function getStationId(item) {
+  return (
+    item?.station_id ||
+    item?.stationId ||
+    item?.id ||
+    item?.site_id ||
+    item?.uuid ||
+    null
+  );
+}
+
+function getGasMarkerColor(station, allStations) {
+  const price = getBestGasPrice(station);
+  const prices = allStations
+    .map(getBestGasPrice)
+    .filter((value) => Number.isFinite(value));
+
+  if (!Number.isFinite(price) || prices.length < 2) return "#facc15";
+
+  const min = Math.min(...prices);
+  const max = Math.max(...prices);
+  const range = max - min;
+
+  if (range <= 0.01) return "#16a34a";
+  if (price <= min + range * 0.33) return "#16a34a";
+  if (price >= min + range * 0.67) return "#dc2626";
+  return "#facc15";
+}
+
+function parseLatLng(item) {
+  const lat = Number(
+    item?.lat ||
+      item?.latitude ||
+      item?.station_lat ||
+      item?.stationLat ||
+      item?.geo_lat ||
+      item?.location?.lat ||
+      item?.coordinates?.lat
+  );
+  const lng = Number(
+    item?.lng ||
+      item?.lon ||
+      item?.longitude ||
+      item?.station_lng ||
+      item?.stationLng ||
+      item?.geo_lng ||
+      item?.location?.lng ||
+      item?.location?.lon ||
+      item?.coordinates?.lng ||
+      item?.coordinates?.lon
+  );
+
+  return {
+    lat: Number.isFinite(lat) ? lat : null,
+    lng: Number.isFinite(lng) ? lng : null,
+  };
+}
+
+function normalizeZylaGasData(payload, userLat, userLng) {
+  const raw =
+    payload?.result?.stations ||
+    payload?.result?.data ||
+    payload?.result?.prices ||
+    payload?.result ||
+    payload?.stations ||
+    payload?.data ||
+    payload?.prices ||
+    [];
+
+  const list = Array.isArray(raw) ? raw : [raw];
+
+  return list
+    .map((item, index) => {
+      const { lat, lng } = parseLatLng(item);
+      const regular = normalizePrice(
+        item?.regular ||
+          item?.regular_price ||
+          item?.regularPrice ||
+          item?.gas_price ||
+          item?.price ||
+          item?.fuel_price
+      );
+      const midGrade = normalizePrice(
+        item?.midgrade ||
+          item?.mid_grade ||
+          item?.midGrade ||
+          item?.midgrade_price ||
+          item?.midPrice
+      );
+      const premium = normalizePrice(
+        item?.premium || item?.premium_price || item?.premiumPrice
+      );
+      const diesel = normalizePrice(
+        item?.diesel || item?.diesel_price || item?.dieselPrice
+      );
+
+      return {
+        id: getStationId(item) || `zyla-gas-${index}`,
+        name:
+          item?.name ||
+          item?.station ||
+          item?.station_name ||
+          item?.stationName ||
+          item?.brand ||
+          "Gas Station",
+        address:
+          item?.address ||
+          item?.station_address ||
+          item?.stationAddress ||
+          item?.location ||
+          item?.city ||
+          "Washington, DC",
+        regular,
+        midGrade,
+        premium,
+        diesel,
+        lat,
+        lng,
+        raw: item,
+        distanceMeters:
+          Number.isFinite(lat) && Number.isFinite(lng)
+            ? distanceInMeters(userLat, userLng, lat, lng)
+            : Infinity,
+      };
+    })
+    .filter((station) => station.name || getBestGasPrice(station) !== null);
+}
+
+async function getZipFromLocation(lat, lng) {
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(
+        lat
+      )}&lon=${encodeURIComponent(lng)}&addressdetails=1`
+    );
+    const data = await response.json();
+    const postcode = data?.address?.postcode;
+    return postcode ? String(postcode).split("-")[0] : DEFAULT_GAS_ZIP;
+  } catch (error) {
+    console.error("ZIP lookup error:", error);
+    return DEFAULT_GAS_ZIP;
+  }
+}
+
+async function addCoordinatesToGasStations(stations, userLat, userLng, zip) {
+  const limited = stations.slice(0, 12);
+
+  const withCoords = await Promise.all(
+    limited.map(async (station) => {
+      if (Number.isFinite(station.lat) && Number.isFinite(station.lng)) {
+        return station;
+      }
+
+      try {
+        const query = `${station.name} ${station.address} ${zip}`;
+        const response = await fetch(
+          `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`
+        );
+        const data = await response.json();
+        const first = Array.isArray(data) ? data[0] : null;
+        const lat = Number(first?.lat);
+        const lng = Number(first?.lon);
+
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return station;
+
+        return {
+          ...station,
+          lat,
+          lng,
+          distanceMeters: distanceInMeters(userLat, userLng, lat, lng),
+        };
+      } catch (error) {
+        console.error("Gas station geocode error:", error);
+        return station;
+      }
+    })
+  );
+
+  return [
+    ...withCoords,
+    ...stations.slice(12),
+  ];
 }
 
 function normalizeCollectApiGasData(data, userLat, userLng) {
@@ -447,6 +638,7 @@ export default function App() {
   const [gasLoading, setGasLoading] = useState(false);
   const [gasError, setGasError] = useState("");
   const [gasSort, setGasSort] = useState("cheapest");
+  const [gasZip, setGasZip] = useState(DEFAULT_GAS_ZIP);
   const [permissionReady, setPermissionReady] = useState(false);
   const [insideDc, setInsideDc] = useState(true);
   const [showLocationHelp, setShowLocationHelp] = useState(false);
@@ -474,6 +666,7 @@ export default function App() {
           toBool(prefs[PREF_KEYS.showNearestCameras], false)
         );
         setShowGasPrices(toBool(prefs[PREF_KEYS.showGasPrices], false));
+        setGasZip(prefs[PREF_KEYS.gasZip] || DEFAULT_GAS_ZIP);
       } finally {
         setPrefsLoaded(true);
       }
@@ -492,6 +685,7 @@ export default function App() {
     savePref(PREF_KEYS.showCurrentStatus, showCurrentStatus);
     savePref(PREF_KEYS.showNearestCameras, showNearestCameras);
     savePref(PREF_KEYS.showGasPrices, showGasPrices);
+    savePref(PREF_KEYS.gasZip, gasZip);
   }, [
     prefsLoaded,
     voiceEnabled,
@@ -503,6 +697,7 @@ export default function App() {
     showCurrentStatus,
     showNearestCameras,
     showGasPrices,
+    gasZip,
   ]);
 
   useEffect(() => {
@@ -887,7 +1082,7 @@ export default function App() {
     insideRadiusIdsRef.current = {};
   }
 
-  async function loadCheapestGasNearMe() {
+  async function loadGasPricesNearMe(zipOverride) {
     try {
       setShowGasPrices(true);
       setGasLoading(true);
@@ -895,26 +1090,43 @@ export default function App() {
 
       const userLat = position?.coords?.latitude || 38.9072;
       const userLng = position?.coords?.longitude || -77.0369;
+      const zip = String(zipOverride || gasZip || DEFAULT_GAS_ZIP).trim();
 
-      const response = await fetch(COLLECTAPI_GAS_STATE_URL, {
+      if (!/^\d{5}$/.test(zip)) {
+        setGasError("Please enter a valid 5-digit ZIP code.");
+        setGasLoading(false);
+        return;
+      }
+
+      const url = `${ZYLA_FUEL_PRICE_URL}?zip=${encodeURIComponent(
+        zip
+      )}&type=regular`;
+
+      const response = await fetch(url, {
         method: "GET",
         headers: {
-          authorization: `apikey ${COLLECTAPI_KEY}`,
-          "content-type": "application/json",
+          Authorization: `Bearer ${ZYLA_FUEL_API_KEY}`,
+          Accept: "application/json",
         },
       });
 
       const data = await response.json();
 
-      if (!response.ok || data?.success === false) {
-        throw new Error(data?.message || "CollectAPI gas request failed.");
+      if (!response.ok || data?.success === false || data?.error) {
+        throw new Error(data?.message || data?.error || "Zyla fuel request failed.");
       }
 
-      const stations = normalizeCollectApiGasData(data, userLat, userLng);
+      const stationsRaw = normalizeZylaGasData(data, userLat, userLng);
+      const stations = await addCoordinatesToGasStations(
+        stationsRaw,
+        userLat,
+        userLng,
+        zip
+      );
 
       if (stations.length === 0) {
         setGasError(
-          "CollectAPI responded, but no station-by-station DC gas prices were returned for this endpoint."
+          "Zyla responded, but this endpoint did not return station-by-station gas prices for that ZIP. Try a nearby DC ZIP like 20001, 20002, 20003, 20005, or 20011."
         );
       }
 
@@ -922,13 +1134,65 @@ export default function App() {
     } catch (error) {
       console.error(error);
       setGasError(
-        "Could not load real-time gas prices from CollectAPI. Check the API plan, endpoint, or key."
+        "Could not load real-time fuel prices from Zyla. Check the API key, subscription, endpoint, and ZIP code."
       );
       setGasStations([]);
     } finally {
       setGasLoading(false);
     }
   }
+
+  async function useMyLocationForGas() {
+    try {
+      setGasLoading(true);
+      setGasError("");
+
+      let lat = position?.coords?.latitude;
+      let lng = position?.coords?.longitude;
+
+      if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+        if (isNativeApp()) {
+          const locationGranted = await requestLocationPermission();
+          if (!locationGranted) {
+            setGasError("Location access is needed to search fuel prices near you.");
+            setGasLoading(false);
+            return;
+          }
+          const current = await Geolocation.getCurrentPosition({
+            enableHighAccuracy: true,
+            timeout: 30000,
+            maximumAge: 3000,
+          });
+          setPosition(current);
+          lat = current.coords.latitude;
+          lng = current.coords.longitude;
+        } else if (navigator.geolocation) {
+          const current = await new Promise((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true,
+              maximumAge: 3000,
+              timeout: 30000,
+            });
+          });
+          setPosition(current);
+          lat = current.coords.latitude;
+          lng = current.coords.longitude;
+        }
+      }
+
+      const zip = Number.isFinite(lat) && Number.isFinite(lng)
+        ? await getZipFromLocation(lat, lng)
+        : DEFAULT_GAS_ZIP;
+
+      setGasZip(zip);
+      await loadGasPricesNearMe(zip);
+    } catch (error) {
+      console.error(error);
+      setGasError("Could not detect your location. Enter your ZIP code instead.");
+      setGasLoading(false);
+    }
+  }
+
 
   function submitIdeaSuggestion(e) {
     e.preventDefault();
@@ -999,6 +1263,8 @@ export default function App() {
         >
           {[
             ["drive", "Drive"],
+            ["gas", "Gas"],
+            ["savings", "Driver Savings"],
             ["settings", "Settings"],
             ["legal", "Legal"],
             ["ideas", "Ideas"],
@@ -1023,7 +1289,7 @@ export default function App() {
 
         {activeTab === "drive" ? (
           <>
-            <SectionCard title="Camera Alerts" accent="#2d2d2d">
+            <SectionCard title="Camera Alerts" accent="#2d2d2d" centered>
               <p style={{ color: "#dedede", lineHeight: 1.6 }}>
                 No Ticket DC alerts drivers of speed cameras, stop sign cameras,
                 red light cameras, bus lane enforcement and more in Washington
@@ -1082,17 +1348,6 @@ export default function App() {
                       Number(String(Date.now()).slice(-8))
                     );
                   }}
-                />
-
-                <TrafficActionButton
-                  icon="⛽"
-                  label={
-                    showGasPrices
-                      ? "Refresh Cheapest Gas Near Me"
-                      : "Cheapest Gas Near Me"
-                  }
-                  active={showGasPrices}
-                  onClick={loadCheapestGasNearMe}
                 />
 
                 <TrafficActionButton
@@ -1221,8 +1476,8 @@ export default function App() {
                           center={[station.lat, station.lng]}
                           radius={7}
                           pathOptions={{
-                            color: "#16a34a",
-                            fillColor: "#16a34a",
+                            color: getGasMarkerColor(station, gasStations),
+                            fillColor: getGasMarkerColor(station, gasStations),
                             fillOpacity: 0.95,
                           }}
                         >
@@ -1248,98 +1503,6 @@ export default function App() {
               </div>
             </SectionCard>
 
-            {showGasPrices ? (
-              <SectionCard title="Cheapest Gas Near Me" accent="#16a34a">
-                <p style={{ color: "#d5d5d5", lineHeight: 1.7 }}>
-                  Get Real-Time Gas Prices. Sort by
-                  cheapest or closest.
-                </p>
-
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <button
-                    onClick={() => setGasSort("cheapest")}
-                    style={{
-                      background:
-                        gasSort === "cheapest" ? "#16a34a" : "#1f1f1f",
-                      color: "white",
-                      border: "1px solid #555",
-                      padding: "10px 14px",
-                      borderRadius: 10,
-                      cursor: "pointer",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    Sort Cheapest
-                  </button>
-
-                  <button
-                    onClick={() => setGasSort("closest")}
-                    style={{
-                      background: gasSort === "closest" ? "#16a34a" : "#1f1f1f",
-                      color: "white",
-                      border: "1px solid #555",
-                      padding: "10px 14px",
-                      borderRadius: 10,
-                      cursor: "pointer",
-                      fontWeight: "bold",
-                    }}
-                  >
-                    Sort Closest
-                  </button>
-                </div>
-
-                {gasLoading ? <p>Loading real-time gas prices...</p> : null}
-
-                {gasError ? (
-                  <div
-                    style={{
-                      background: "#3b1212",
-                      color: "#ffb5b5",
-                      padding: 12,
-                      borderRadius: 12,
-                      marginTop: 12,
-                    }}
-                  >
-                    {gasError}
-                  </div>
-                ) : null}
-
-                {sortedGasStations.length === 0 && !gasLoading ? (
-                  <p style={{ color: "#bbb" }}>
-                    No gas prices loaded yet. Tap Cheapest Gas Near Me.
-                  </p>
-                ) : null}
-
-                {sortedGasStations.map((station) => (
-                  <div
-                    key={station.id}
-                    style={{
-                      background: "#101010",
-                      border: "1px solid #333",
-                      borderRadius: 12,
-                      padding: 14,
-                      marginTop: 10,
-                    }}
-                  >
-                    <div style={{ fontWeight: "bold", fontSize: 18 }}>
-                      {station.name}
-                    </div>
-                    <div style={{ color: "#bbb", marginTop: 4 }}>
-                      {station.address}
-                    </div>
-                    <div style={{ marginTop: 8 }}>
-                      Regular: {money(station.regular)}
-                    </div>
-                    <div>Mid: {money(station.midGrade)}</div>
-                    <div>Premium: {money(station.premium)}</div>
-                    <div>Diesel: {money(station.diesel)}</div>
-                    <div style={{ marginTop: 8 }}>
-                      Distance: {formatDistance(station.distanceMeters)}
-                    </div>
-                  </div>
-                ))}
-              </SectionCard>
-            ) : null}
 
             {showAlertHistory ? (
               <SectionCard title="Recent Alerts">
@@ -1473,6 +1636,177 @@ export default function App() {
               </SectionCard>
             ) : null}
           </>
+        ) : null}
+
+        {activeTab === "gas" ? (
+          <SectionCard title="Real-Time Gas Prices Near Me" accent="#16a34a" centered>
+            <p style={{ color: "#d5d5d5", lineHeight: 1.7, maxWidth: 760, margin: "0 auto 16px" }}>
+              Search real-time fuel prices by ZIP code or use your location. Gas station markers appear on the map when the API returns station coordinates or when the app can match the station address. Green means cheaper, yellow means average, and red means expensive.
+            </p>
+
+            <div
+              style={{
+                display: "flex",
+                gap: 10,
+                flexWrap: "wrap",
+                justifyContent: "center",
+                marginTop: 14,
+              }}
+            >
+              <input
+                type="text"
+                inputMode="numeric"
+                maxLength={5}
+                placeholder="Enter ZIP code"
+                value={gasZip}
+                onChange={(e) => setGasZip(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                style={{
+                  width: 160,
+                  padding: "12px 14px",
+                  borderRadius: 12,
+                  border: "1px solid #444",
+                  background: "#101010",
+                  color: "white",
+                  fontWeight: "bold",
+                  textAlign: "center",
+                }}
+              />
+
+              <button
+                onClick={() => loadGasPricesNearMe()}
+                style={{
+                  background: "#16a34a",
+                  color: "white",
+                  border: "1px solid #22c55e",
+                  padding: "12px 16px",
+                  borderRadius: 12,
+                  cursor: "pointer",
+                  fontWeight: "bold",
+                }}
+              >
+                Search Gas Prices
+              </button>
+
+              <button
+                onClick={useMyLocationForGas}
+                style={{
+                  background: "#1f1f1f",
+                  color: "white",
+                  border: "1px solid #555",
+                  padding: "12px 16px",
+                  borderRadius: 12,
+                  cursor: "pointer",
+                  fontWeight: "bold",
+                }}
+              >
+                Use My Location
+              </button>
+
+              <button
+                onClick={() => setGasSort(gasSort === "cheapest" ? "closest" : "cheapest")}
+                style={{
+                  background: "#1f1f1f",
+                  color: "white",
+                  border: "1px solid #555",
+                  padding: "12px 16px",
+                  borderRadius: 12,
+                  cursor: "pointer",
+                  fontWeight: "bold",
+                }}
+              >
+                Sort: {gasSort === "cheapest" ? "Cheapest" : "Closest"}
+              </button>
+            </div>
+
+            <div style={{ display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap", marginTop: 16, color: "#d5d5d5" }}>
+              <span>🟢 Cheapest</span>
+              <span>🟡 Average</span>
+              <span>🔴 Expensive</span>
+            </div>
+
+            {gasLoading ? <p>Loading real-time gas prices...</p> : null}
+
+            {gasError ? (
+              <div
+                style={{
+                  background: "#3b1212",
+                  color: "#ffb5b5",
+                  padding: 12,
+                  borderRadius: 12,
+                  marginTop: 12,
+                  textAlign: "center",
+                }}
+              >
+                {gasError}
+              </div>
+            ) : null}
+
+            {sortedGasStations.length === 0 && !gasLoading ? (
+              <p style={{ color: "#bbb" }}>
+                No gas prices loaded yet. Enter a ZIP code or tap Use My Location.
+              </p>
+            ) : null}
+
+            {sortedGasStations.map((station) => (
+              <div
+                key={station.id}
+                style={{
+                  background: "#101010",
+                  border: `1px solid ${getGasMarkerColor(station, gasStations)}`,
+                  borderRadius: 12,
+                  padding: 14,
+                  marginTop: 10,
+                  textAlign: "center",
+                }}
+              >
+                <div style={{ fontWeight: "bold", fontSize: 18 }}>
+                  {station.name}
+                </div>
+                <div style={{ color: "#bbb", marginTop: 4 }}>
+                  {station.address}
+                </div>
+                <div style={{ marginTop: 8 }}>Regular: {money(station.regular)}</div>
+                <div>Mid: {money(station.midGrade)}</div>
+                <div>Premium: {money(station.premium)}</div>
+                <div>Diesel: {money(station.diesel)}</div>
+                <div style={{ marginTop: 8 }}>
+                  Distance: {formatDistance(station.distanceMeters)}
+                </div>
+              </div>
+            ))}
+          </SectionCard>
+        ) : null}
+
+        {activeTab === "savings" ? (
+          <SectionCard title="How No Ticket DC Helps Drivers Save Money" accent="#22c55e" centered>
+            <p style={{ color: "#d5d5d5", lineHeight: 1.7, maxWidth: 800, margin: "0 auto" }}>
+              No Ticket DC helps drivers avoid costly traffic camera surprises and find cheaper fuel while they are already on the road.
+            </p>
+
+            <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
+              {[
+                ["🚗", "Uber and Lyft drivers", "Stay aware of red light cameras, speed cameras, stop sign cameras, and nearby fuel prices between rides."],
+                ["🍔", "DoorDash and delivery drivers", "Protect your daily earnings by reducing ticket risk and searching for cheaper gas near your route."],
+                ["🚕", "Taxi drivers and commuters", "Use camera alerts plus fuel price searches to lower daily driving costs in Washington, DC."],
+                ["🚚", "Work vehicles and fleets", "Help company drivers avoid unnecessary camera tickets and reduce fuel expenses across multiple vehicles."],
+              ].map(([icon, title, text]) => (
+                <div
+                  key={title}
+                  style={{
+                    background: "#101010",
+                    border: "1px solid #333",
+                    borderRadius: 14,
+                    padding: 16,
+                    textAlign: "center",
+                  }}
+                >
+                  <div style={{ fontSize: 28 }}>{icon}</div>
+                  <div style={{ fontWeight: "bold", fontSize: 18, marginTop: 6 }}>{title}</div>
+                  <div style={{ color: "#cfcfcf", lineHeight: 1.6, marginTop: 6 }}>{text}</div>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
         ) : null}
 
         {activeTab === "settings" ? (
@@ -1631,4 +1965,3 @@ export default function App() {
     </div>
   );
 }
-
