@@ -436,7 +436,12 @@ function parseLatLng(item) {
 }
 
 function normalizeZylaGasData(payload, userLat, userLng) {
+  // Fuel Rate Insights now returns this shape:
+  // { status, zip, gas_type, gas_prices: [{average, lowest}, {station_id, price}, ...] }
+  const gasType = String(payload?.gas_type || payload?.type || "regular").toLowerCase();
   const raw =
+    payload?.gas_prices ||
+    payload?.result?.gas_prices ||
     payload?.result?.stations ||
     payload?.result?.data ||
     payload?.result?.prices ||
@@ -449,46 +454,47 @@ function normalizeZylaGasData(payload, userLat, userLng) {
   const list = Array.isArray(raw) ? raw : [raw];
 
   return list
+    .filter((item) => item && (getStationId(item) || item?.price || item?.regular || item?.gas_price))
     .map((item, index) => {
       const { lat, lng } = parseLatLng(item);
+      const priceFromResponse = normalizePrice(item?.price || item?.gas_price || item?.fuel_price);
+
       const regular = normalizePrice(
-        item?.regular ||
-          item?.regular_price ||
-          item?.regularPrice ||
-          item?.gas_price ||
-          item?.price ||
-          item?.fuel_price
+        item?.regular || item?.regular_price || item?.regularPrice ||
+          (gasType.includes("regular") ? priceFromResponse : null)
       );
       const midGrade = normalizePrice(
-        item?.midgrade ||
-          item?.mid_grade ||
-          item?.midGrade ||
-          item?.midgrade_price ||
-          item?.midPrice
+        item?.midgrade || item?.mid_grade || item?.midGrade || item?.midgrade_price || item?.midPrice ||
+          (gasType.includes("mid") ? priceFromResponse : null)
       );
       const premium = normalizePrice(
-        item?.premium || item?.premium_price || item?.premiumPrice
+        item?.premium || item?.premium_price || item?.premiumPrice ||
+          (gasType.includes("premium") ? priceFromResponse : null)
       );
       const diesel = normalizePrice(
-        item?.diesel || item?.diesel_price || item?.dieselPrice
+        item?.diesel || item?.diesel_price || item?.dieselPrice ||
+          (gasType.includes("diesel") ? priceFromResponse : null)
       );
 
+      const stationId = getStationId(item) || `zyla-gas-${index}`;
+
       return {
-        id: getStationId(item) || `zyla-gas-${index}`,
+        id: stationId,
+        stationId,
         name:
           item?.name ||
           item?.station ||
           item?.station_name ||
           item?.stationName ||
           item?.brand ||
-          "Gas Station",
+          `Gas Station ${stationId}`,
         address:
           item?.address ||
           item?.station_address ||
           item?.stationAddress ||
           item?.location ||
           item?.city ||
-          "Washington, DC",
+          "Address loading from Zyla station data...",
         regular,
         midGrade,
         premium,
@@ -502,7 +508,82 @@ function normalizeZylaGasData(payload, userLat, userLng) {
             : Infinity,
       };
     })
-    .filter((station) => station.name || getBestGasPrice(station) !== null);
+    .filter((station) => getBestGasPrice(station) !== null);
+}
+
+function formatStationAddress(address) {
+  if (!address) return "Address not available";
+  if (typeof address === "string") return address;
+
+  return [
+    address.line1,
+    address.line2,
+    address.city,
+    address.state,
+    address.postal_code,
+  ]
+    .filter(Boolean)
+    .join(", ");
+}
+
+async function fetchZylaStationDetails(station) {
+  if (!station?.stationId) return station;
+
+  try {
+    const url = `${ZYLA_STATION_DATA_URL}?station_id=${encodeURIComponent(station.stationId)}`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${ZYLA_FUEL_API_KEY}`,
+        Accept: "application/json",
+      },
+    });
+
+    const payload = await response.json();
+    if (!response.ok || payload?.error || payload?.success === false) return station;
+
+    const data = payload?.data || payload?.result || payload?.station || payload;
+    const { lat, lng } = parseLatLng(data);
+    const address = formatStationAddress(data?.address || data?.station_address || data?.location);
+
+    return {
+      ...station,
+      name: data?.name || data?.station_name || data?.brand || station.name,
+      address: address || station.address,
+      lat: Number.isFinite(lat) ? lat : station.lat,
+      lng: Number.isFinite(lng) ? lng : station.lng,
+      phone: data?.phone || station.phone || "",
+      rating: data?.rating?.overall || station.rating || null,
+      openStatus: data?.open_status || station.openStatus || "",
+      amenities: Array.isArray(data?.amenities) ? data.amenities : station.amenities || [],
+      distanceMeters:
+        Number.isFinite(lat) && Number.isFinite(lng)
+          ? station.distanceMeters
+          : station.distanceMeters,
+    };
+  } catch (error) {
+    console.error("Zyla station data error:", error);
+    return station;
+  }
+}
+
+async function enrichGasStationsWithZylaDetails(stations, userLat, userLng) {
+  // Basic plan has limited calls, so only enrich first 10 stations returned by price endpoint.
+  const limited = stations.slice(0, 10);
+  const enriched = await Promise.all(limited.map(fetchZylaStationDetails));
+
+  return [
+    ...enriched.map((station) => {
+      if (Number.isFinite(station.lat) && Number.isFinite(station.lng)) {
+        return {
+          ...station,
+          distanceMeters: distanceInMeters(userLat, userLng, station.lat, station.lng),
+        };
+      }
+      return station;
+    }),
+    ...stations.slice(10),
+  ];
 }
 
 async function getZipFromLocation(lat, lng) {
@@ -1117,8 +1198,13 @@ export default function App() {
       }
 
       const stationsRaw = normalizeZylaGasData(data, userLat, userLng);
-      const stations = await addCoordinatesToGasStations(
+      const stationsWithDetails = await enrichGasStationsWithZylaDetails(
         stationsRaw,
+        userLat,
+        userLng
+      );
+      const stations = await addCoordinatesToGasStations(
+        stationsWithDetails,
         userLat,
         userLng,
         zip
@@ -1126,7 +1212,7 @@ export default function App() {
 
       if (stations.length === 0) {
         setGasError(
-          "Zyla responded, but this endpoint did not return station-by-station gas prices for that ZIP. Try a nearby DC ZIP like 20001, 20002, 20003, 20005, or 20011."
+          "Zyla responded, but no gas prices were returned for that ZIP. Try a nearby DC ZIP like 20001, 20002, 20003, 20005, or 20011."
         );
       }
 
@@ -1965,3 +2051,4 @@ export default function App() {
     </div>
   );
 }
+
