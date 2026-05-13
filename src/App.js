@@ -22,7 +22,64 @@ const ZYLA_STATION_DATA_URL =
   "https://zylalabs.com/api/5925/fuel+rate+insights+api/23316/station+data";
 
 const DEFAULT_GAS_ZIP = "20001";
-const GAS_TYPES = ["regular", "midgrade", "premium", "diesel"];
+
+const REPORT_TYPES = [
+  "Accident",
+  "Police Ahead",
+  "Ice / Road Hazard",
+  "Disabled Vehicle",
+  "Heavy Traffic",
+  "Construction",
+  "Flooding",
+  "Road Closed",
+  "Speed Trap",
+  "Other Hazard",
+];
+
+const DC_TRAFFIC_LAWS = [
+  ["🛑 Full Stops Required", "Rolling through a stop sign can still count as a violation. Stop sign cameras may issue tickets if the vehicle does not fully stop."],
+  ["📸 Speed Cameras", "DC speed cameras can issue tickets when drivers exceed the posted speed limit. Always slow down before camera zones."],
+  ["🚦 Red Light Cameras", "Entering an intersection after the light turns red can trigger a camera ticket."],
+  ["🚌 Bus Lane Enforcement", "Driving, stopping, or parking in a bus lane during restricted hours can result in a ticket."],
+  ["↪️ No Turn on Red", "Many DC intersections do not allow right turns on red. Always check posted signs before turning."],
+  ["🏫 School Zones", "School zone speed limits may drop during posted hours. Slow down even if students are not visible."],
+  ["🚧 Blocking the Box", "Do not enter an intersection unless you can fully clear it. Blocking the box can lead to a ticket."],
+  ["📱 Hands-Free Law", "Holding or using your phone while driving can result in fines. Use hands-free options only."],
+  ["🚲 Bike Lanes", "Stopping, parking, or driving in bike lanes can result in tickets, especially downtown."],
+  ["🚗 Double Parking", "Double parking in DC can lead to expensive fines and can block traffic or bike lanes."],
+  ["🚐 Mobile Enforcement", "DC may use mobile camera units and enforcement vehicles, not just fixed cameras."],
+  ["↔️ Cameras May Face Multiple Directions", "Some DC traffic cameras monitor more than one direction, so do not assume only one side is enforced."],
+  ["🚶 Crosswalk Safety", "Drivers must yield to pedestrians in crosswalks. Failing to yield can result in a traffic violation."],
+  ["🚫 Do Not Block Bike Boxes", "Some intersections have bike boxes near the stop line. Stopping inside them may lead to enforcement."],
+  ["🚛 Truck Restrictions", "Some DC streets restrict trucks or commercial vehicles. Always check posted signs."],
+];
+
+const SUBSCRIPTION_PLANS = [
+  {
+    name: "Monthly Driver Plan",
+    price: "$2.99/month",
+    detail: "First month free, then $2.99 per month for daily No Ticket DC use.",
+    productId: "noticketdc_monthly_299",
+  },
+  {
+    name: "3-Day Visitor Pass",
+    price: "$0.99",
+    detail: "Perfect for tourists, visitors, and short trips in Washington DC.",
+    productId: "noticketdc_3day_099",
+  },
+  {
+    name: "Yearly Driver Plan",
+    price: "$29.99/year",
+    detail: "Best value for regular DC drivers who use the app all year.",
+    productId: "noticketdc_yearly_2999",
+  },
+  {
+    name: "Fleet Plan",
+    price: "$39.99/month",
+    detail: "For businesses with up to 20 vehicles.",
+    productId: "noticketdc_fleet_3999",
+  },
+];
 
 const APP_EMAIL = "info@noticketdc.com";
 
@@ -265,9 +322,7 @@ function openExternal(url) {
 function buildSuggestionMailto(name, email, suggestion) {
   const subject = encodeURIComponent("NoTicket DC App Suggestion");
   const body = encodeURIComponent(
-    `Name: ${name || ""}\nEmail: ${email || ""}\n\nSuggestion:\n${
-      suggestion || ""
-    }`
+    `Name: ${name || ""}\nEmail: ${email || ""}\n\nSuggestion:\n${suggestion || ""}`
   );
   return `mailto:${APP_EMAIL}?subject=${subject}&body=${body}`;
 }
@@ -436,8 +491,6 @@ function parseLatLng(item) {
 }
 
 function normalizeZylaGasData(payload, userLat, userLng) {
-  // Fuel Rate Insights now returns this shape:
-  // { status, zip, gas_type, gas_prices: [{average, lowest}, {station_id, price}, ...] }
   const gasType = String(payload?.gas_type || payload?.type || "regular").toLowerCase();
   const raw =
     payload?.gas_prices ||
@@ -460,19 +513,29 @@ function normalizeZylaGasData(payload, userLat, userLng) {
       const priceFromResponse = normalizePrice(item?.price || item?.gas_price || item?.fuel_price);
 
       const regular = normalizePrice(
-        item?.regular || item?.regular_price || item?.regularPrice ||
+        item?.regular ||
+          item?.regular_price ||
+          item?.regularPrice ||
           (gasType.includes("regular") ? priceFromResponse : null)
       );
       const midGrade = normalizePrice(
-        item?.midgrade || item?.mid_grade || item?.midGrade || item?.midgrade_price || item?.midPrice ||
+        item?.midgrade ||
+          item?.mid_grade ||
+          item?.midGrade ||
+          item?.midgrade_price ||
+          item?.midPrice ||
           (gasType.includes("mid") ? priceFromResponse : null)
       );
       const premium = normalizePrice(
-        item?.premium || item?.premium_price || item?.premiumPrice ||
+        item?.premium ||
+          item?.premium_price ||
+          item?.premiumPrice ||
           (gasType.includes("premium") ? priceFromResponse : null)
       );
       const diesel = normalizePrice(
-        item?.diesel || item?.diesel_price || item?.dieselPrice ||
+        item?.diesel ||
+          item?.diesel_price ||
+          item?.dieselPrice ||
           (gasType.includes("diesel") ? priceFromResponse : null)
       );
 
@@ -530,7 +593,9 @@ async function fetchZylaStationDetails(station) {
   if (!station?.stationId) return station;
 
   try {
-    const url = `${ZYLA_STATION_DATA_URL}?station_id=${encodeURIComponent(station.stationId)}`;
+    const url = `${ZYLA_STATION_DATA_URL}?station_id=${encodeURIComponent(
+      station.stationId
+    )}`;
     const response = await fetch(url, {
       method: "GET",
       headers: {
@@ -540,11 +605,14 @@ async function fetchZylaStationDetails(station) {
     });
 
     const payload = await response.json();
-    if (!response.ok || payload?.error || payload?.success === false) return station;
+    if (!response.ok || payload?.error || payload?.success === false)
+      return station;
 
     const data = payload?.data || payload?.result || payload?.station || payload;
     const { lat, lng } = parseLatLng(data);
-    const address = formatStationAddress(data?.address || data?.station_address || data?.location);
+    const address = formatStationAddress(
+      data?.address || data?.station_address || data?.location
+    );
 
     return {
       ...station,
@@ -555,7 +623,9 @@ async function fetchZylaStationDetails(station) {
       phone: data?.phone || station.phone || "",
       rating: data?.rating?.overall || station.rating || null,
       openStatus: data?.open_status || station.openStatus || "",
-      amenities: Array.isArray(data?.amenities) ? data.amenities : station.amenities || [],
+      amenities: Array.isArray(data?.amenities)
+        ? data.amenities
+        : station.amenities || [],
       distanceMeters:
         Number.isFinite(lat) && Number.isFinite(lng)
           ? station.distanceMeters
@@ -568,7 +638,6 @@ async function fetchZylaStationDetails(station) {
 }
 
 async function enrichGasStationsWithZylaDetails(stations, userLat, userLng) {
-  // Basic plan has limited calls, so only enrich first 10 stations returned by price endpoint.
   const limited = stations.slice(0, 10);
   const enriched = await Promise.all(limited.map(fetchZylaStationDetails));
 
@@ -577,7 +646,12 @@ async function enrichGasStationsWithZylaDetails(stations, userLat, userLng) {
       if (Number.isFinite(station.lat) && Number.isFinite(station.lng)) {
         return {
           ...station,
-          distanceMeters: distanceInMeters(userLat, userLng, station.lat, station.lng),
+          distanceMeters: distanceInMeters(
+            userLat,
+            userLng,
+            station.lat,
+            station.lng
+          ),
         };
       }
       return station;
@@ -614,7 +688,9 @@ async function addCoordinatesToGasStations(stations, userLat, userLng, zip) {
       try {
         const query = `${station.name} ${station.address} ${zip}`;
         const response = await fetch(
-          `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`
+          `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(
+            query
+          )}`
         );
         const data = await response.json();
         const first = Array.isArray(data) ? data[0] : null;
@@ -636,59 +712,7 @@ async function addCoordinatesToGasStations(stations, userLat, userLng, zip) {
     })
   );
 
-  return [
-    ...withCoords,
-    ...stations.slice(12),
-  ];
-}
-
-function normalizeCollectApiGasData(data, userLat, userLng) {
-  const raw =
-    data?.result?.stations ||
-    data?.result?.data ||
-    data?.result ||
-    data?.stations ||
-    data?.data ||
-    [];
-
-  const list = Array.isArray(raw) ? raw : [raw];
-
-  return list
-    .map((item, index) => {
-      const lat = Number(item.lat || item.latitude || item.stationLat);
-      const lng = Number(
-        item.lng || item.lon || item.longitude || item.stationLng
-      );
-
-      return {
-        id: item.id || item.stationId || `gas-${index}`,
-        name:
-          item.name ||
-          item.station ||
-          item.stationName ||
-          item.brand ||
-          "Gas Station",
-        address:
-          item.address ||
-          item.location ||
-          item.stationAddress ||
-          item.city ||
-          "Washington, DC",
-        regular: normalizePrice(
-          item.regular || item.regularPrice || item.gasoline
-        ),
-        midGrade: normalizePrice(item.midGrade || item.mid || item.midPrice),
-        premium: normalizePrice(item.premium || item.premiumPrice),
-        diesel: normalizePrice(item.diesel || item.dieselPrice),
-        lat: Number.isFinite(lat) ? lat : null,
-        lng: Number.isFinite(lng) ? lng : null,
-        distanceMeters:
-          Number.isFinite(lat) && Number.isFinite(lng)
-            ? distanceInMeters(userLat, userLng, lat, lng)
-            : Infinity,
-      };
-    })
-    .filter((station) => station.name);
+  return [...withCoords, ...stations.slice(12)];
 }
 
 export default function App() {
@@ -726,6 +750,10 @@ export default function App() {
   const [ideaName, setIdeaName] = useState("");
   const [ideaEmail, setIdeaEmail] = useState("");
   const [ideaSuggestion, setIdeaSuggestion] = useState("");
+  const [reports, setReports] = useState([]);
+  const [reportType, setReportType] = useState("Accident");
+  const [reportNote, setReportNote] = useState("");
+  const [selectedPlan, setSelectedPlan] = useState(null);
 
   const watchIdRef = useRef(null);
   const nativeWatchCallbackIdRef = useRef(null);
@@ -743,9 +771,7 @@ export default function App() {
         setShowOther(toBool(prefs[PREF_KEYS.showOther], true));
         setShowAlertHistory(toBool(prefs[PREF_KEYS.showAlertHistory], false));
         setShowCurrentStatus(toBool(prefs[PREF_KEYS.showCurrentStatus], false));
-        setShowNearestCameras(
-          toBool(prefs[PREF_KEYS.showNearestCameras], false)
-        );
+        setShowNearestCameras(toBool(prefs[PREF_KEYS.showNearestCameras], false));
         setShowGasPrices(toBool(prefs[PREF_KEYS.showGasPrices], false));
         setGasZip(prefs[PREF_KEYS.gasZip] || DEFAULT_GAS_ZIP);
       } finally {
@@ -1194,7 +1220,9 @@ export default function App() {
       const data = await response.json();
 
       if (!response.ok || data?.success === false || data?.error) {
-        throw new Error(data?.message || data?.error || "Zyla fuel request failed.");
+        throw new Error(
+          data?.message || data?.error || "Zyla fuel request failed."
+        );
       }
 
       const stationsRaw = normalizeZylaGasData(data, userLat, userLng);
@@ -1266,9 +1294,10 @@ export default function App() {
         }
       }
 
-      const zip = Number.isFinite(lat) && Number.isFinite(lng)
-        ? await getZipFromLocation(lat, lng)
-        : DEFAULT_GAS_ZIP;
+      const zip =
+        Number.isFinite(lat) && Number.isFinite(lng)
+          ? await getZipFromLocation(lat, lng)
+          : DEFAULT_GAS_ZIP;
 
       setGasZip(zip);
       await loadGasPricesNearMe(zip);
@@ -1279,6 +1308,33 @@ export default function App() {
     }
   }
 
+  function submitDriverReport(e) {
+    e.preventDefault();
+
+    const lat = position?.coords?.latitude || null;
+    const lng = position?.coords?.longitude || null;
+
+    const newReport = {
+      id: Date.now(),
+      type: reportType,
+      note: reportNote || "No extra details added.",
+      lat,
+      lng,
+      time: new Date().toLocaleTimeString(),
+    };
+
+    setReports((prev) => [newReport, ...prev].slice(0, 20));
+    setReportNote("");
+
+    const alertText = `${reportType} reported ahead. Use caution.`;
+    if (voiceEnabled) speakText(alertText);
+
+    fireLocalNotification(
+      "NoTicket DC Driver Report",
+      alertText,
+      Number(String(Date.now()).slice(-8))
+    );
+  }
 
   function submitIdeaSuggestion(e) {
     e.preventDefault();
@@ -1350,6 +1406,9 @@ export default function App() {
           {[
             ["drive", "Drive"],
             ["gas", "Gas"],
+            ["laws", "DC Traffic Laws"],
+            ["report", "Report"],
+            ["plans", "Plans"],
             ["savings", "Driver Savings"],
             ["settings", "Settings"],
             ["legal", "Legal"],
@@ -1378,9 +1437,24 @@ export default function App() {
             <SectionCard title="Camera Alerts" accent="#2d2d2d" centered>
               <p style={{ color: "#dedede", lineHeight: 1.6 }}>
                 No Ticket DC alerts drivers of speed cameras, stop sign cameras,
-                red light cameras, bus lane enforcement and more in Washington
-                DC.
+                red light cameras, bus lane enforcement and more in Washington DC.
               </p>
+
+              <div
+                style={{
+                  background: "#111827",
+                  border: "1px solid #334155",
+                  borderRadius: 14,
+                  padding: 12,
+                  marginTop: 14,
+                  color: "#d5d5d5",
+                  lineHeight: 1.6,
+                }}
+              >
+                Background driving alerts require the native app build to add a
+                foreground service/background location. Keep the app open until
+                that native update is completed.
+              </div>
 
               {showLocationHelp ? (
                 <div
@@ -1395,8 +1469,8 @@ export default function App() {
                   }}
                 >
                   <strong>Location access needed.</strong> Turn on location so
-                  No Ticket DC can warn you about nearby cameras while you
-                  drive. Then tap the red start button again.
+                  No Ticket DC can warn you about nearby cameras while you drive.
+                  Then tap the red start button again.
                 </div>
               ) : null}
 
@@ -1578,8 +1652,7 @@ export default function App() {
                               <div>Premium: {money(station.premium)}</div>
                               <div>Diesel: {money(station.diesel)}</div>
                               <div style={{ marginTop: 8 }}>
-                                Distance:{" "}
-                                {formatDistance(station.distanceMeters)}
+                                Distance: {formatDistance(station.distanceMeters)}
                               </div>
                             </div>
                           </Popup>
@@ -1588,7 +1661,6 @@ export default function App() {
                 </MapContainer>
               </div>
             </SectionCard>
-
 
             {showAlertHistory ? (
               <SectionCard title="Recent Alerts">
@@ -1725,9 +1797,22 @@ export default function App() {
         ) : null}
 
         {activeTab === "gas" ? (
-          <SectionCard title="Real-Time Gas Prices Near Me" accent="#16a34a" centered>
-            <p style={{ color: "#d5d5d5", lineHeight: 1.7, maxWidth: 760, margin: "0 auto 16px" }}>
-              Search real-time fuel prices by ZIP code or use your location. Gas station markers appear on the map when the API returns station coordinates or when the app can match the station address. Green means cheaper, yellow means average, and red means expensive.
+          <SectionCard
+            title="Real-Time Gas Prices Near Me"
+            accent="#16a34a"
+            centered
+          >
+            <p
+              style={{
+                color: "#d5d5d5",
+                lineHeight: 1.7,
+                maxWidth: 760,
+                margin: "0 auto 16px",
+              }}
+            >
+              Search real-time fuel prices by ZIP code or use your location.
+              Green means cheaper, yellow means average, and red means
+              expensive.
             </p>
 
             <div
@@ -1745,7 +1830,9 @@ export default function App() {
                 maxLength={5}
                 placeholder="Enter ZIP code"
                 value={gasZip}
-                onChange={(e) => setGasZip(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                onChange={(e) =>
+                  setGasZip(e.target.value.replace(/\D/g, "").slice(0, 5))
+                }
                 style={{
                   width: 160,
                   padding: "12px 14px",
@@ -1789,7 +1876,9 @@ export default function App() {
               </button>
 
               <button
-                onClick={() => setGasSort(gasSort === "cheapest" ? "closest" : "cheapest")}
+                onClick={() =>
+                  setGasSort(gasSort === "cheapest" ? "closest" : "cheapest")
+                }
                 style={{
                   background: "#1f1f1f",
                   color: "white",
@@ -1804,7 +1893,16 @@ export default function App() {
               </button>
             </div>
 
-            <div style={{ display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap", marginTop: 16, color: "#d5d5d5" }}>
+            <div
+              style={{
+                display: "flex",
+                gap: 14,
+                justifyContent: "center",
+                flexWrap: "wrap",
+                marginTop: 16,
+                color: "#d5d5d5",
+              }}
+            >
               <span>🟢 Cheapest</span>
               <span>🟡 Average</span>
               <span>🔴 Expensive</span>
@@ -1829,7 +1927,8 @@ export default function App() {
 
             {sortedGasStations.length === 0 && !gasLoading ? (
               <p style={{ color: "#bbb" }}>
-                No gas prices loaded yet. Enter a ZIP code or tap Use My Location.
+                No gas prices loaded yet. Enter a ZIP code or tap Use My
+                Location.
               </p>
             ) : null}
 
@@ -1838,7 +1937,10 @@ export default function App() {
                 key={station.id}
                 style={{
                   background: "#101010",
-                  border: `1px solid ${getGasMarkerColor(station, gasStations)}`,
+                  border: `1px solid ${getGasMarkerColor(
+                    station,
+                    gasStations
+                  )}`,
                   borderRadius: 12,
                   padding: 14,
                   marginTop: 10,
@@ -1851,7 +1953,9 @@ export default function App() {
                 <div style={{ color: "#bbb", marginTop: 4 }}>
                   {station.address}
                 </div>
-                <div style={{ marginTop: 8 }}>Regular: {money(station.regular)}</div>
+                <div style={{ marginTop: 8 }}>
+                  Regular: {money(station.regular)}
+                </div>
                 <div>Mid: {money(station.midGrade)}</div>
                 <div>Premium: {money(station.premium)}</div>
                 <div>Diesel: {money(station.diesel)}</div>
@@ -1863,18 +1967,274 @@ export default function App() {
           </SectionCard>
         ) : null}
 
+        {activeTab === "laws" ? (
+          <SectionCard
+            title="DC Traffic Laws & Camera Ticket Traps"
+            accent="#facc15"
+            centered
+          >
+            <p style={{ color: "#d5d5d5", lineHeight: 1.7 }}>
+              Learn Washington DC traffic laws, camera rules, and common ticket
+              traps that can help drivers avoid costly mistakes.
+            </p>
+
+            <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
+              {DC_TRAFFIC_LAWS.map(([title, text]) => (
+                <div
+                  key={title}
+                  style={{
+                    background: "#101010",
+                    border: "1px solid #333",
+                    borderRadius: 14,
+                    padding: 16,
+                    textAlign: "left",
+                  }}
+                >
+                  <div style={{ fontWeight: "bold", fontSize: 18 }}>
+                    {title}
+                  </div>
+                  <div
+                    style={{
+                      color: "#cfcfcf",
+                      lineHeight: 1.6,
+                      marginTop: 6,
+                    }}
+                  >
+                    {text}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        ) : null}
+
+        {activeTab === "report" ? (
+          <SectionCard title="Report Road Conditions" accent="#38bdf8" centered>
+            <p style={{ color: "#d5d5d5", lineHeight: 1.7 }}>
+              Report accidents, police ahead, ice, construction, traffic, or
+              road hazards. Reports are local in this web version. To alert all
+              users in real time, connect Firebase/Supabase later.
+            </p>
+
+            <form onSubmit={submitDriverReport}>
+              <select
+                value={reportType}
+                onChange={(e) => setReportType(e.target.value)}
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  borderRadius: 12,
+                  border: "1px solid #444",
+                  background: "#101010",
+                  color: "white",
+                  marginTop: 12,
+                }}
+              >
+                {REPORT_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {type}
+                  </option>
+                ))}
+              </select>
+
+              <textarea
+                placeholder="Add details, street name, direction, or notes..."
+                value={reportNote}
+                onChange={(e) => setReportNote(e.target.value)}
+                rows={5}
+                style={{
+                  width: "100%",
+                  padding: "12px",
+                  borderRadius: 12,
+                  border: "1px solid #444",
+                  background: "#101010",
+                  color: "white",
+                  boxSizing: "border-box",
+                  marginTop: 12,
+                  resize: "vertical",
+                }}
+              />
+
+              <button
+                type="submit"
+                style={{
+                  background: "#dc2626",
+                  color: "white",
+                  border: "none",
+                  padding: "14px 22px",
+                  borderRadius: 12,
+                  cursor: "pointer",
+                  fontWeight: "bold",
+                  marginTop: 14,
+                }}
+              >
+                Submit Report
+              </button>
+            </form>
+
+            <div style={{ marginTop: 22 }}>
+              <h3>Recent Driver Reports</h3>
+
+              {reports.length === 0 ? (
+                <p style={{ color: "#bbb" }}>No reports submitted yet.</p>
+              ) : (
+                reports.map((report) => (
+                  <div
+                    key={report.id}
+                    style={{
+                      background: "#101010",
+                      border: "1px solid #333",
+                      borderRadius: 12,
+                      padding: 14,
+                      marginTop: 10,
+                      textAlign: "left",
+                    }}
+                  >
+                    <div style={{ fontWeight: "bold" }}>
+                      {report.type} • {report.time}
+                    </div>
+                    <div style={{ color: "#cfcfcf", marginTop: 6 }}>
+                      {report.note}
+                    </div>
+                    <div
+                      style={{ color: "#888", marginTop: 6, fontSize: 13 }}
+                    >
+                      Location:{" "}
+                      {report.lat && report.lng
+                        ? `${report.lat.toFixed(5)}, ${report.lng.toFixed(5)}`
+                        : "Location not available"}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </SectionCard>
+        ) : null}
+
+        {activeTab === "plans" ? (
+          <SectionCard
+            title="No Ticket DC Subscription Plans"
+            accent="#22c55e"
+            centered
+          >
+            <p style={{ color: "#d5d5d5", lineHeight: 1.7 }}>
+              Choose the plan that fits how you drive. These buttons are ready
+              for Apple App Store and Google Play subscription product IDs.
+            </p>
+
+            <div style={{ display: "grid", gap: 14, marginTop: 18 }}>
+              {SUBSCRIPTION_PLANS.map((plan) => (
+                <div
+                  key={plan.productId}
+                  style={{
+                    background:
+                      selectedPlan === plan.productId ? "#052e16" : "#101010",
+                    border:
+                      selectedPlan === plan.productId
+                        ? "1px solid #22c55e"
+                        : "1px solid #333",
+                    borderRadius: 14,
+                    padding: 18,
+                    textAlign: "center",
+                  }}
+                >
+                  <h3 style={{ marginTop: 0 }}>{plan.name}</h3>
+                  <div
+                    style={{
+                      fontSize: 24,
+                      fontWeight: "bold",
+                      color: "#22c55e",
+                    }}
+                  >
+                    {plan.price}
+                  </div>
+                  <p style={{ color: "#cfcfcf", lineHeight: 1.6 }}>
+                    {plan.detail}
+                  </p>
+                  <button
+                    onClick={() => {
+                      setSelectedPlan(plan.productId);
+                      alert(
+                        `Selected ${plan.name}. Native Apple/Google subscription checkout must be connected in the mobile app build. Product ID: ${plan.productId}`
+                      );
+                    }}
+                    style={{
+                      background: "#dc2626",
+                      color: "white",
+                      border: "none",
+                      padding: "12px 18px",
+                      borderRadius: 12,
+                      cursor: "pointer",
+                      fontWeight: "bold",
+                    }}
+                  >
+                    Choose Plan
+                  </button>
+                  <div style={{ color: "#888", fontSize: 12, marginTop: 8 }}>
+                    Product ID: {plan.productId}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div
+              style={{
+                background: "#1f1f1f",
+                border: "1px solid #444",
+                borderRadius: 14,
+                padding: 14,
+                marginTop: 18,
+                color: "#d5d5d5",
+                lineHeight: 1.6,
+              }}
+            >
+              Subscription checkout requires native Apple StoreKit and Google
+              Play Billing integration in the mobile app build. This page is
+              the plan UI and product ID setup.
+            </div>
+          </SectionCard>
+        ) : null}
+
         {activeTab === "savings" ? (
-          <SectionCard title="How No Ticket DC Helps Drivers Save Money" accent="#22c55e" centered>
-            <p style={{ color: "#d5d5d5", lineHeight: 1.7, maxWidth: 800, margin: "0 auto" }}>
-              No Ticket DC helps drivers avoid costly traffic camera surprises and find cheaper fuel while they are already on the road.
+          <SectionCard
+            title="How No Ticket DC Helps Drivers Save Money"
+            accent="#22c55e"
+            centered
+          >
+            <p
+              style={{
+                color: "#d5d5d5",
+                lineHeight: 1.7,
+                maxWidth: 800,
+                margin: "0 auto",
+              }}
+            >
+              No Ticket DC helps drivers avoid costly traffic camera surprises
+              and find cheaper fuel while they are already on the road.
             </p>
 
             <div style={{ display: "grid", gap: 12, marginTop: 18 }}>
               {[
-                ["🚗", "Uber and Lyft drivers", "Stay aware of red light cameras, speed cameras, stop sign cameras, and nearby fuel prices between rides."],
-                ["🍔", "DoorDash and delivery drivers", "Protect your daily earnings by reducing ticket risk and searching for cheaper gas near your route."],
-                ["🚕", "Taxi drivers and commuters", "Use camera alerts plus fuel price searches to lower daily driving costs in Washington, DC."],
-                ["🚚", "Work vehicles and fleets", "Help company drivers avoid unnecessary camera tickets and reduce fuel expenses across multiple vehicles."],
+                [
+                  "🚗",
+                  "Uber and Lyft drivers",
+                  "Stay aware of red light cameras, speed cameras, stop sign cameras, and nearby fuel prices between rides.",
+                ],
+                [
+                  "🍔",
+                  "DoorDash and delivery drivers",
+                  "Protect your daily earnings by reducing ticket risk and searching for cheaper gas near your route.",
+                ],
+                [
+                  "🚕",
+                  "Taxi drivers and commuters",
+                  "Use camera alerts plus fuel price searches to lower daily driving costs in Washington, DC.",
+                ],
+                [
+                  "🚚",
+                  "Work vehicles and fleets",
+                  "Help company drivers avoid unnecessary camera tickets and reduce fuel expenses across multiple vehicles.",
+                ],
               ].map(([icon, title, text]) => (
                 <div
                   key={title}
@@ -1887,8 +2247,16 @@ export default function App() {
                   }}
                 >
                   <div style={{ fontSize: 28 }}>{icon}</div>
-                  <div style={{ fontWeight: "bold", fontSize: 18, marginTop: 6 }}>{title}</div>
-                  <div style={{ color: "#cfcfcf", lineHeight: 1.6, marginTop: 6 }}>{text}</div>
+                  <div
+                    style={{ fontWeight: "bold", fontSize: 18, marginTop: 6 }}
+                  >
+                    {title}
+                  </div>
+                  <div
+                    style={{ color: "#cfcfcf", lineHeight: 1.6, marginTop: 6 }}
+                  >
+                    {text}
+                  </div>
                 </div>
               ))}
             </div>
@@ -2051,4 +2419,3 @@ export default function App() {
     </div>
   );
 }
-
